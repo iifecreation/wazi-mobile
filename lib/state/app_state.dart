@@ -8,24 +8,30 @@ import '../api/accounts_api.dart' as accounts_api;
 import '../api/api_client.dart';
 import '../api/payments_api.dart';
 import '../api/registration_api.dart';
+import '../api/requests_api.dart';
+import '../api/security_api.dart';
 import '../api/voice_api.dart';
 import 'models.dart';
 
+/// Which payment flow a PendingPaymentInfo belongs to — picks the confirm
+/// path (REST for barcode, voice "confirm" for the other two) and which
+/// submitPin endpoint the PIN sheet calls.
+enum PaymentKind { barcode, contact, institution }
+
 /// Small local record of a payment awaiting confirm/PIN — populated from a
-/// real server response (barcode scan, or the two-turn send_money dialogue),
-/// never scripted. `isContact` picks which submitPin endpoint the PIN sheet
-/// calls.
+/// real server response (barcode scan, or a two-turn send_money /
+/// pay_institution dialogue), never scripted.
 class PendingPaymentInfo {
   PendingPaymentInfo({
     required this.paymentId,
-    required this.isContact,
+    required this.kind,
     required this.recipientName,
     required this.amountFormatted,
     required this.replyText,
   });
 
   final String paymentId;
-  final bool isContact;
+  final PaymentKind kind;
   final String recipientName;
   final String amountFormatted;
   final String replyText;
@@ -52,6 +58,8 @@ class AppState extends ChangeNotifier {
   late final accounts_api.AccountsApi accountsApi = accounts_api.AccountsApi(_apiClient);
   late final VoiceApi voiceApi = VoiceApi(_apiClient);
   late final PaymentsApi paymentsApi = PaymentsApi(_apiClient);
+  late final SecurityApi securityApi = SecurityApi(_apiClient);
+  late final RequestsApi requestsApi = RequestsApi(_apiClient);
 
   /// Client-generated conversation id for /voice/query — the dialogue
   /// manager keys its pending-confirmation state off this, same as a real
@@ -91,6 +99,13 @@ class AppState extends ChangeNotifier {
   PendingPaymentInfo? pendingPayment;
   PaymentResult? lastPaymentResult;
   String? paymentError;
+
+  // --- duress / panic PIN (settings screen) ---------------------------------
+  DuressStatus? duressStatus;
+
+  // --- inbound contextual voice requests (settings screen) -------------------
+  List<MoneyRequestOut>? requestInbox;
+  String? requestActionError;
 
   final List<Timer> _timers = [];
 
@@ -172,6 +187,101 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     } catch (_) {
       // Non-fatal — balanceLabel just shows a placeholder until it succeeds.
+    }
+  }
+
+  // --- duress / panic PIN ----------------------------------------------------
+  Future<void> refreshDuressStatus() async {
+    if (userId == null) return;
+    try {
+      duressStatus = await securityApi.getStatus(userId!);
+      notifyListeners();
+    } catch (_) {
+      // Non-fatal — the settings section just shows "not set" until it
+      // succeeds.
+    }
+  }
+
+  Future<bool> setDuressPin(String pinCode) async {
+    if (userId == null) return false;
+    busy = true;
+    error = null;
+    notifyListeners();
+    try {
+      duressStatus = await securityApi.setDuressPin(userId!, pinCode);
+      return true;
+    } on ApiException catch (e) {
+      error = e.detail;
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> setTrustedContact(String name, String phoneNumber) async {
+    if (userId == null) return false;
+    busy = true;
+    error = null;
+    notifyListeners();
+    try {
+      duressStatus = await securityApi.setTrustedContact(userId!, name, phoneNumber);
+      return true;
+    } on ApiException catch (e) {
+      error = e.detail;
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  // --- inbound contextual voice requests --------------------------------
+  Future<void> refreshRequestInbox() async {
+    if (userId == null) return;
+    try {
+      requestInbox = await requestsApi.getInbox(userId!);
+      notifyListeners();
+    } catch (_) {
+      // Non-fatal — the settings section just shows nothing pending until
+      // it succeeds.
+    }
+  }
+
+  Future<bool> approveRequest(String requestId, String pinCode) async {
+    if (userId == null) return false;
+    busy = true;
+    requestActionError = null;
+    notifyListeners();
+    try {
+      await requestsApi.approve(requestId, userId!, pinCode);
+      await refreshRequestInbox();
+      await refreshBalance();
+      return true;
+    } on ApiException catch (e) {
+      requestActionError = e.detail;
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> declineRequest(String requestId) async {
+    if (userId == null) return false;
+    busy = true;
+    requestActionError = null;
+    notifyListeners();
+    try {
+      await requestsApi.decline(requestId, userId!);
+      await refreshRequestInbox();
+      return true;
+    } on ApiException catch (e) {
+      requestActionError = e.detail;
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
     }
   }
 
@@ -443,7 +553,7 @@ class AppState extends ChangeNotifier {
       final result = await paymentsApi.scanBarcode(userId!, 'NQR-AMALA-JOINT-001');
       pendingPayment = PendingPaymentInfo(
         paymentId: result.paymentId,
-        isContact: false,
+        kind: PaymentKind.barcode,
         recipientName: result.recipientName,
         amountFormatted: result.amountFormatted,
         replyText: result.replyText,
@@ -466,18 +576,11 @@ class AppState extends ChangeNotifier {
     busy = true;
     notifyListeners();
     try {
-      if (pending.isContact) {
-        final turn = await voiceApi.query(sessionId: sessionId, userId: userId!, transcript: 'Confirm');
-        _push(ChatRole.ai, turn.replyText, speaking: speak);
-        sheet = null;
-        if (turn.data?['status'] == 'awaiting_pin') {
-          openPin();
-        }
-      } else {
+      if (pending.kind == PaymentKind.barcode) {
         final result = await paymentsApi.confirmBarcode(pending.paymentId, userId!, 'confirm');
         pendingPayment = PendingPaymentInfo(
           paymentId: result.paymentId,
-          isContact: false,
+          kind: PaymentKind.barcode,
           recipientName: result.recipientName,
           amountFormatted: result.amountFormatted,
           replyText: result.replyText,
@@ -486,6 +589,16 @@ class AppState extends ChangeNotifier {
           openPin();
         } else {
           sheet = null;
+        }
+      } else {
+        // Contact and institution payments are both confirmed by voice —
+        // the dialogue manager routes on the session's pending payment
+        // type, not anything the client needs to distinguish here.
+        final turn = await voiceApi.query(sessionId: sessionId, userId: userId!, transcript: 'Confirm');
+        _push(ChatRole.ai, turn.replyText, speaking: speak);
+        sheet = null;
+        if (turn.data?['status'] == 'awaiting_pin') {
+          openPin();
         }
       }
     } on ApiException catch (e) {
@@ -521,9 +634,11 @@ class AppState extends ChangeNotifier {
     paymentError = null;
     notifyListeners();
     try {
-      final result = pending.isContact
-          ? await paymentsApi.submitContactPin(pending.paymentId, userId!, enteredPin)
-          : await paymentsApi.submitBarcodePin(pending.paymentId, userId!, enteredPin);
+      final result = switch (pending.kind) {
+        PaymentKind.barcode => await paymentsApi.submitBarcodePin(pending.paymentId, userId!, enteredPin),
+        PaymentKind.contact => await paymentsApi.submitContactPin(pending.paymentId, userId!, enteredPin),
+        PaymentKind.institution => await paymentsApi.submitInstitutionPin(pending.paymentId, userId!, enteredPin),
+      };
       lastPaymentResult = result;
       pin = '';
       if (result.status == 'completed') {
@@ -564,7 +679,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    const order = ['send', 'balance', 'spend', 'scan'];
+    const order = ['send', 'balance', 'spend', 'scan', 'pay_fees', 'request'];
     final userCount = turns.where((t) => t.role == ChatRole.user).length;
     run(order[userCount % order.length]);
   }
@@ -575,6 +690,8 @@ class AppState extends ChangeNotifier {
     'spend': 'Where did my money go this month?',
     'scan': 'Scan this to pay',
     'budget': 'Cap my transport at 100000 naira a month',
+    'pay_fees': 'Pay school fees at Kings College 5000 naira',
+    'request': 'I need 1000 naira from Mum for data, due Friday',
   };
 
   void run(String kind) => _runTranscript(_kindPhrases[kind] ?? kind);
@@ -624,8 +741,25 @@ class AppState extends ChangeNotifier {
       if (turn.intent == 'send_money' && turn.data?['status'] == 'awaiting_confirmation') {
         pendingPayment = PendingPaymentInfo(
           paymentId: turn.data!['payment_id'] as String,
-          isContact: true,
+          kind: PaymentKind.contact,
           recipientName: turn.data!['contact_name'] as String,
+          amountFormatted: turn.data!['amount_formatted'] as String,
+          replyText: turn.replyText,
+        );
+        _later(() {
+          sheet = SheetType.confirm;
+          notifyListeners();
+        }, const Duration(milliseconds: 700));
+      }
+
+      // Diaspora direct-to-obligation payments — "pay school fees at
+      // Kings College" — same two-turn confirm shape as send_money, just
+      // to a verified institution instead of a saved contact.
+      if (turn.intent == 'pay_institution' && turn.data?['status'] == 'awaiting_confirmation') {
+        pendingPayment = PendingPaymentInfo(
+          paymentId: turn.data!['payment_id'] as String,
+          kind: PaymentKind.institution,
+          recipientName: turn.data!['institution_name'] as String,
           amountFormatted: turn.data!['amount_formatted'] as String,
           replyText: turn.replyText,
         );
@@ -646,4 +780,6 @@ class AppState extends ChangeNotifier {
   void askSpend() => run('spend');
   void askScan() => run('scan');
   void askBudget() => run('budget');
+  void askPayFees() => run('pay_fees');
+  void askRequestMoney() => run('request');
 }

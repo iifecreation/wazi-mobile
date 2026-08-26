@@ -110,6 +110,8 @@ class HomeScreen extends StatelessWidget {
                         _Chip(label: '"What\'s my balance?"', onTap: appState.askBalance),
                         _Chip(label: '"Where did my money go?"', onTap: appState.askSpend),
                         _Chip(label: '"Scan this"', onTap: appState.askScan),
+                        _Chip(label: '"Pay school fees at Kings College"', onTap: appState.askPayFees),
+                        _Chip(label: '"I need 1,000 naira from Mum"', onTap: appState.askRequestMoney),
                       ],
                     ),
                   ),

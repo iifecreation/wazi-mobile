@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../api/requests_api.dart';
 import '../state/app_state.dart';
 import '../state/models.dart';
 import '../theme/colors.dart';
@@ -8,13 +9,26 @@ import '../widgets/pill_toggle.dart';
 
 const _langs = ['English', 'Pidgin', 'Yoruba', 'Igbo', 'Hausa', 'Swahili', 'French'];
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.appState});
 
   final AppState appState;
 
   @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    widget.appState.refreshDuressStatus();
+    widget.appState.refreshRequestInbox();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final appState = widget.appState;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(22, 20, 22, 34),
@@ -100,6 +114,33 @@ class SettingsScreen extends StatelessWidget {
               ),
             ]),
             const SizedBox(height: 26),
+            _sectionLabel('EMERGENCY'),
+            const SizedBox(height: 10),
+            _Card(children: [
+              _NavRow(
+                title: 'Duress PIN',
+                trailing: (appState.duressStatus?.hasDuressPin ?? false) ? 'Set →' : 'Set up →',
+                trailingColor: WaziColors.teal,
+                onTap: () => _showSetDuressPinDialog(context, appState),
+              ),
+              _NavRow(
+                title: 'Trusted contact',
+                trailing: appState.duressStatus?.hasTrustedContact ?? false ? 'Set →' : 'Add →',
+                trailingColor: WaziColors.teal,
+                onTap: () => _showSetTrustedContactDialog(context, appState),
+                isLast: true,
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 17),
+                child: Text(
+                  'If you\'re ever forced to pay, enter your duress PIN instead of your real one at the PIN sheet. '
+                  'It looks and sounds exactly like a normal successful payment — no money actually moves, and your '
+                  'trusted contact is quietly alerted.',
+                  style: WaziText.inter(size: 12, color: WaziColors.textAt(.4), height: 1.4),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 26),
             _sectionLabel('PREFERENCES'),
             const SizedBox(height: 10),
             _Card(children: [
@@ -141,6 +182,140 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Widget _sectionLabel(String s) => Text(s, style: WaziText.inter(size: 11.5, color: WaziColors.textAt(.4), letterSpacing: 1.6));
+
+  Future<void> _showSetDuressPinDialog(BuildContext context, AppState appState) async {
+    final pinController = TextEditingController();
+    final confirmController = TextEditingController();
+    String? localError;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final displayError = localError ?? appState.error;
+            return AlertDialog(
+              backgroundColor: WaziColors.card,
+              title: Text('Set duress PIN', style: WaziText.grotesk(size: 18, weight: FontWeight.w600)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'A different 4-digit PIN from your real one. Entering it under pressure quietly freezes your account instead of moving money.',
+                    style: WaziText.inter(size: 12.5, color: WaziColors.textAt(.55), height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  _dialogPinField(pinController, 'New duress PIN'),
+                  const SizedBox(height: 10),
+                  _dialogPinField(confirmController, 'Confirm duress PIN'),
+                  if (displayError != null) ...[
+                    const SizedBox(height: 10),
+                    Text(displayError, style: WaziText.inter(size: 12.5, color: WaziColors.gold)),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: Text('Cancel', style: WaziText.inter(size: 14, color: WaziColors.textAt(.6))),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: WaziColors.gold, foregroundColor: WaziColors.bg),
+                  onPressed: () async {
+                    final pinValue = pinController.text.trim();
+                    final confirmValue = confirmController.text.trim();
+                    if (pinValue.length != 4 || !RegExp(r'^\d{4}$').hasMatch(pinValue)) {
+                      setDialogState(() => localError = 'Enter 4 digits.');
+                      return;
+                    }
+                    if (pinValue != confirmValue) {
+                      setDialogState(() => localError = "PINs don't match.");
+                      return;
+                    }
+                    setDialogState(() => localError = null);
+                    final ok = await appState.setDuressPin(pinValue);
+                    if (ok && dialogContext.mounted) {
+                      Navigator.of(dialogContext).pop();
+                    } else {
+                      setDialogState(() {});
+                    }
+                  },
+                  child: Text('Save', style: WaziText.grotesk(size: 14, weight: FontWeight.w600)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showSetTrustedContactDialog(BuildContext context, AppState appState) async {
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: WaziColors.card,
+          title: Text('Trusted contact', style: WaziText.grotesk(size: 18, weight: FontWeight.w600)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Alerted quietly if your duress PIN is ever used.',
+                style: WaziText.inter(size: 12.5, color: WaziColors.textAt(.55), height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameController,
+                style: WaziText.inter(size: 15),
+                decoration: InputDecoration(hintText: 'Name', hintStyle: WaziText.inter(size: 15, color: WaziColors.textAt(.35))),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: phoneController,
+                keyboardType: TextInputType.phone,
+                style: WaziText.inter(size: 15),
+                decoration: InputDecoration(hintText: 'Phone number', hintStyle: WaziText.inter(size: 15, color: WaziColors.textAt(.35))),
+              ),
+              if (appState.error != null) ...[
+                const SizedBox(height: 10),
+                Text(appState.error!, style: WaziText.inter(size: 12.5, color: WaziColors.gold)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text('Cancel', style: WaziText.inter(size: 14, color: WaziColors.textAt(.6))),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: WaziColors.gold, foregroundColor: WaziColors.bg),
+              onPressed: () async {
+                if (nameController.text.trim().isEmpty || phoneController.text.trim().isEmpty) return;
+                final ok = await appState.setTrustedContact(nameController.text.trim(), phoneController.text.trim());
+                if (ok && dialogContext.mounted) Navigator.of(dialogContext).pop();
+              },
+              child: Text('Save', style: WaziText.grotesk(size: 14, weight: FontWeight.w600)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _dialogPinField(TextEditingController controller, String hint) {
+    return TextField(
+      controller: controller,
+      keyboardType: TextInputType.number,
+      obscureText: true,
+      maxLength: 4,
+      style: WaziText.grotesk(size: 18, weight: FontWeight.w500, letterSpacing: 4),
+      decoration: InputDecoration(counterText: '', hintText: hint, hintStyle: WaziText.inter(size: 14, color: WaziColors.textAt(.35))),
+    );
+  }
 }
 
 class _Card extends StatelessWidget {

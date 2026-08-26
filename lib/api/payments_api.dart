@@ -38,6 +38,18 @@ class PaymentResult {
     replyText: json['reply_text'] as String,
     newBalanceFormatted: json['new_balance_formatted'] as String?,
   );
+
+  /// Mirrors app/payments/schemas.py::InstitutionPaymentResponse — a
+  /// diaspora direct-to-obligation payment (school fees, hospital bill)
+  /// to a verified institution rather than a person.
+  factory PaymentResult.fromInstitutionJson(Map<String, dynamic> json) => PaymentResult(
+    paymentId: json['payment_id'] as String,
+    status: json['status'] as String,
+    recipientName: json['institution_name'] as String,
+    amountFormatted: json['amount_formatted'] as String,
+    replyText: json['reply_text'] as String,
+    newBalanceFormatted: json['new_balance_formatted'] as String?,
+  );
 }
 
 class PaymentsApi {
@@ -71,5 +83,13 @@ class PaymentsApi {
   Future<PaymentResult> submitContactPin(String paymentId, String userId, String pin) async {
     final json = await _client.post('/payments/contact/$paymentId/pin', {'user_id': userId, 'pin': pin});
     return PaymentResult.fromContactJson(json);
+  }
+
+  /// Institution payments are only ever *initiated* and *confirmed*
+  /// through `/voice/query`, same reasoning as contact payments — PIN
+  /// submission is the one REST call this API needs for that flow.
+  Future<PaymentResult> submitInstitutionPin(String paymentId, String userId, String pin) async {
+    final json = await _client.post('/payments/institution/$paymentId/pin', {'user_id': userId, 'pin': pin});
+    return PaymentResult.fromInstitutionJson(json);
   }
 }
