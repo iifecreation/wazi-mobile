@@ -141,6 +141,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ]),
             const SizedBox(height: 26),
+            _sectionLabel('MONEY REQUESTS'),
+            const SizedBox(height: 10),
+            if (appState.requestInbox == null)
+              const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Center(child: CircularProgressIndicator()))
+            else if (appState.requestInbox!.where((r) => r.status == 'pending').isEmpty)
+              _Card(children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
+                  child: Text(
+                    'Nothing waiting on you right now. Say "I need 5000 naira from Mum for data" to send a request '
+                    'the other way.',
+                    style: WaziText.inter(size: 13, color: WaziColors.textAt(.5), height: 1.4),
+                  ),
+                ),
+              ])
+            else
+              _Card(
+                children: appState.requestInbox!.where((r) => r.status == 'pending').toList().asMap().entries.map((e) {
+                  final isLast = e.key == appState.requestInbox!.where((r) => r.status == 'pending').length - 1;
+                  return _RequestRow(request: e.value, appState: appState, isLast: isLast);
+                }).toList(),
+              ),
+            const SizedBox(height: 26),
             _sectionLabel('PREFERENCES'),
             const SizedBox(height: 10),
             _Card(children: [
@@ -316,6 +339,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
       decoration: InputDecoration(counterText: '', hintText: hint, hintStyle: WaziText.inter(size: 14, color: WaziColors.textAt(.35))),
     );
   }
+
+}
+
+Future<void> _showApproveRequestDialog(BuildContext context, AppState appState, MoneyRequestOut request) async {
+  final pinController = TextEditingController();
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          return AlertDialog(
+            backgroundColor: WaziColors.card,
+            title: Text('Send ${request.amountFormatted}?', style: WaziText.grotesk(size: 18, weight: FontWeight.w600)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'For ${request.reason}${request.deadline != null ? ' · due ${request.deadline}' : ''}.',
+                  style: WaziText.inter(size: 12.5, color: WaziColors.textAt(.55), height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: pinController,
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  maxLength: 4,
+                  style: WaziText.grotesk(size: 18, weight: FontWeight.w500, letterSpacing: 4),
+                  decoration: InputDecoration(
+                    counterText: '',
+                    hintText: 'Your PIN',
+                    hintStyle: WaziText.inter(size: 14, color: WaziColors.textAt(.35)),
+                  ),
+                ),
+                if (appState.requestActionError != null) ...[
+                  const SizedBox(height: 10),
+                  Text(appState.requestActionError!, style: WaziText.inter(size: 12.5, color: WaziColors.gold)),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text('Cancel', style: WaziText.inter(size: 14, color: WaziColors.textAt(.6))),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: WaziColors.gold, foregroundColor: WaziColors.bg),
+                onPressed: () async {
+                  final pinValue = pinController.text.trim();
+                  if (pinValue.length != 4) return;
+                  final ok = await appState.approveRequest(request.requestId, pinValue);
+                  if (ok && dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  } else {
+                    setDialogState(() {});
+                  }
+                },
+                child: Text('Send', style: WaziText.grotesk(size: 14, weight: FontWeight.w600)),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
 }
 
 class _Card extends StatelessWidget {
@@ -333,6 +421,68 @@ class _Card extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(children: children),
+    );
+  }
+}
+
+class _RequestRow extends StatelessWidget {
+  const _RequestRow({required this.request, required this.appState, this.isLast = false});
+
+  final MoneyRequestOut request;
+  final AppState appState;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      decoration: BoxDecoration(border: isLast ? null : Border(bottom: BorderSide(color: WaziColors.textAt(.06)))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(request.amountFormatted, style: WaziText.grotesk(size: 16, weight: FontWeight.w600, color: WaziColors.gold)),
+              Text('from ${request.requesterUserId}', style: WaziText.inter(size: 11.5, color: WaziColors.textAt(.4))),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'For ${request.reason}${request.deadline != null ? ' · due ${request.deadline}' : ''}',
+            style: WaziText.inter(size: 13, color: WaziColors.textAt(.6)),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: appState.busy ? null : () => appState.declineRequest(request.requestId),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: WaziColors.textAt(.18)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                  ),
+                  child: Text('Decline', style: WaziText.grotesk(size: 13.5, weight: FontWeight.w500)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: appState.busy ? null : () => _showApproveRequestDialog(context, appState, request),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: WaziColors.gold,
+                    foregroundColor: WaziColors.bg,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                  ),
+                  child: Text('Approve', style: WaziText.grotesk(size: 13.5, weight: FontWeight.w600, color: WaziColors.bg)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
