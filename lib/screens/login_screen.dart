@@ -1,16 +1,11 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
 import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
-import '../widgets/pin_dots.dart';
 
-/// Real login: phone + PIN -> POST /registration/login -> existing user_id.
-/// Reachable via Welcome's "I already have an account". The two legacy
-/// fixture accounts (rich balance + transaction history) are reachable here
-/// via +2348000000001 / PIN 1234 and +2348000000002 / PIN 4321 — see
-/// app/registration/fixtures.py on the server.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.appState});
 
@@ -20,13 +15,45 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
   final _phoneController = TextEditingController();
-  String _pin = '';
+  final _passwordController = TextEditingController();
+  late AnimationController _animController;
+  late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
+
+  String _lastPhone = '';
+  String _lastPass = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+    _fadeAnim = Tween<double>(begin: 0, end: 1).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic));
+    
+    _phoneController.addListener(() {
+      if (_phoneController.text != _lastPhone) {
+        _lastPhone = _phoneController.text;
+        setState(() {});
+      }
+    });
+    
+    _passwordController.addListener(() {
+      if (_passwordController.text != _lastPass) {
+        _lastPass = _passwordController.text;
+        setState(() {});
+      }
+    });
+    
+    _animController.forward();
+  }
 
   @override
   void dispose() {
     _phoneController.dispose();
+    _passwordController.dispose();
+    _animController.dispose();
     super.dispose();
   }
 
@@ -34,143 +61,236 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
-    await widget.appState.login(_fullPhone, _pin);
+    await widget.appState.login(_fullPhone, _passwordController.text);
   }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 30),
-        child: AnimatedBuilder(
-          animation: widget.appState,
-          builder: (context, _) {
-            final appState = widget.appState;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                IconButton(
-                  onPressed: () => appState.go(AppScreen.welcome),
-                  icon: const Icon(Icons.arrow_back, color: Colors.white54),
-                  padding: EdgeInsets.zero,
-                  alignment: Alignment.centerLeft,
-                ),
-                const SizedBox(height: 8),
-                Text('Welcome back', style: WaziText.grotesk(size: 30, weight: FontWeight.w600, letterSpacing: -0.6, height: 1.1)),
-                const SizedBox(height: 8),
-                Text('Sign in with your phone number and PIN.', style: WaziText.inter(size: 14, color: WaziColors.textAt(.55))),
-                const SizedBox(height: 26),
-                _label('PHONE NUMBER'),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: WaziColors.card,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: WaziColors.textAt(.09)),
-                  ),
-                  child: Row(
-                    children: [
-                      Text('+234', style: WaziText.grotesk(size: 15, weight: FontWeight.w500, color: WaziColors.textAt(.6))),
-                      const SizedBox(width: 10),
-                      Container(width: 1, height: 20, color: WaziColors.textAt(.14)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextField(
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          style: WaziText.grotesk(size: 17, weight: FontWeight.w500, letterSpacing: 1.0),
-                          decoration: InputDecoration(
-                            border: InputBorder.none,
-                            hintText: '802 431 9902',
-                            hintStyle: WaziText.grotesk(size: 17, weight: FontWeight.w500, letterSpacing: 1.0, color: WaziColors.textAt(.3)),
+    return Scaffold(
+      backgroundColor: Colors.transparent, // Background handled by AppRoot
+      body: Stack(
+        children: [
+          // Subtle animated background gradients
+          Positioned(
+            top: -100,
+            right: -100,
+            child: Container(
+              width: 300,
+              height: 300,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: WaziColors.teal.withValues(alpha: 0.15),
+              ),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
+                child: const SizedBox(),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -50,
+            left: -50,
+            child: Container(
+              width: 250,
+              height: 250,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: WaziColors.gold.withValues(alpha: 0.1),
+              ),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
+                child: const SizedBox(),
+              ),
+            ),
+          ),
+          
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 30),
+              child: AnimatedBuilder(
+                animation: widget.appState,
+                builder: (context, _) {
+                  final appState = widget.appState;
+                  return FadeTransition(
+                    opacity: _fadeAnim,
+                    child: SlideTransition(
+                      position: _slideAnim,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          IconButton(
+                            onPressed: () => appState.go(AppScreen.welcome),
+                            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white70, size: 20),
+                            padding: const EdgeInsets.all(12),
+                            alignment: Alignment.centerLeft,
                           ),
-                        ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Welcome back',
+                            style: WaziText.grotesk(size: 34, weight: FontWeight.w700, letterSpacing: -1.0, height: 1.1).copyWith(
+                              foreground: Paint()
+                                ..shader = LinearGradient(
+                                  colors: [Colors.white, Colors.white.withValues(alpha: 0.7)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ).createShader(const Rect.fromLTWH(0, 0, 200, 70)),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text('Sign in securely with your phone number and password.', style: WaziText.inter(size: 15, color: WaziColors.textAt(.6), height: 1.4)),
+                          const SizedBox(height: 36),
+                          
+                          // Glassmorphic Input Container
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(24),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                              child: Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.03),
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _label('PHONE NUMBER'),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(color: WaziColors.textAt(.05)),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Text('+234', style: WaziText.grotesk(size: 16, weight: FontWeight.w600, color: WaziColors.teal)),
+                                          const SizedBox(width: 12),
+                                          Container(width: 1, height: 20, color: WaziColors.textAt(.14)),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: TextField(
+                                              controller: _phoneController,
+                                              keyboardType: TextInputType.phone,
+                                              style: WaziText.grotesk(size: 18, weight: FontWeight.w600, letterSpacing: 1.5, color: Colors.white),
+                                              cursorColor: WaziColors.teal,
+                                              decoration: InputDecoration(
+                                                border: InputBorder.none,
+                                                hintText: '802 431 9902',
+                                                hintStyle: WaziText.grotesk(size: 18, weight: FontWeight.w500, letterSpacing: 1.5, color: WaziColors.textAt(.2)),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    _label('PASSWORD'),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(color: WaziColors.textAt(.05)),
+                                      ),
+                                      child: TextField(
+                                        controller: _passwordController,
+                                        obscureText: true,
+                                        style: WaziText.grotesk(size: 18, weight: FontWeight.w600, letterSpacing: 1.5, color: Colors.white),
+                                        cursorColor: WaziColors.teal,
+                                        decoration: InputDecoration(
+                                          border: InputBorder.none,
+                                          hintText: 'Enter your password',
+                                          hintStyle: WaziText.grotesk(size: 16, weight: FontWeight.w500, letterSpacing: 0, color: WaziColors.textAt(.2)),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          
+                          if (appState.error != null) ...[
+                            const SizedBox(height: 24),
+                            Center(
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                                ),
+                                child: Text(appState.error!, style: WaziText.inter(size: 13, color: Colors.redAccent)),
+                              ),
+                            ),
+                          ],
+                          
+                          const SizedBox(height: 48),
+                          
+                          // Premium Button
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                if (_phoneController.text.trim().isNotEmpty && _passwordController.text.isNotEmpty && !appState.busy)
+                                  BoxShadow(
+                                    color: WaziColors.teal.withValues(alpha: 0.3),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 8),
+                                  ),
+                              ],
+                              gradient: LinearGradient(
+                                colors: (_phoneController.text.trim().isNotEmpty && _passwordController.text.isNotEmpty && !appState.busy)
+                                    ? [WaziColors.teal, Color(0xFF38B2A1)]
+                                    : [WaziColors.textAt(0.1), WaziColors.textAt(0.05)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(20),
+                                onTap: (_phoneController.text.trim().isNotEmpty && _passwordController.text.isNotEmpty && !appState.busy) ? _submit : null,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 18),
+                                  child: Center(
+                                    child: appState.busy
+                                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: WaziColors.bg))
+                                        : Text(
+                                            'Sign In',
+                                            style: WaziText.grotesk(
+                                              size: 17,
+                                              weight: FontWeight.w700,
+                                              color: (_phoneController.text.trim().isNotEmpty && _passwordController.text.isNotEmpty && !appState.busy)
+                                                  ? WaziColors.bg
+                                                  : WaziColors.textAt(0.3),
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _label('4-DIGIT PIN'),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                  decoration: BoxDecoration(
-                    color: WaziColors.card,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: WaziColors.textAt(.09)),
-                  ),
-                  child: PinDots(length: _pin.length, filled: false),
-                ),
-                const SizedBox(height: 10),
-                _MiniKeypad(
-                  onKey: (v) {
-                    setState(() {
-                      if (v == '⌫') {
-                        if (_pin.isNotEmpty) _pin = _pin.substring(0, _pin.length - 1);
-                      } else if (_pin.length < 4) {
-                        _pin += v;
-                      }
-                    });
-                  },
-                ),
-                if (appState.error != null) ...[
-                  const SizedBox(height: 14),
-                  Text(appState.error!, style: WaziText.inter(size: 13, color: WaziColors.gold)),
-                ],
-                const SizedBox(height: 22),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: (_phoneController.text.trim().isNotEmpty && _pin.length == 4 && !appState.busy) ? _submit : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: WaziColors.gold,
-                      foregroundColor: WaziColors.bg,
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
                     ),
-                    child: appState.busy
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: WaziColors.bg))
-                        : Text('Sign in', style: WaziText.grotesk(size: 16, weight: FontWeight.w600, color: WaziColors.bg)),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _label(String text) => Text(text, style: WaziText.inter(size: 12, color: WaziColors.textAt(.45), letterSpacing: 1.2));
-}
-
-class _MiniKeypad extends StatelessWidget {
-  const _MiniKeypad({required this.onKey});
-
-  final ValueChanged<String> onKey;
-
-  static const _keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: 2.2,
-      children: _keys.map((k) {
-        return GestureDetector(
-          onTap: k.isEmpty ? null : () => onKey(k),
-          child: Container(
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: k.isEmpty ? Colors.transparent : WaziColors.textAt(.06)),
-            alignment: Alignment.center,
-            child: Text(k, style: WaziText.grotesk(size: 18, weight: FontWeight.w500)),
-          ),
-        );
-      }).toList(),
-    );
-  }
+  Widget _label(String text) => Text(text, style: WaziText.inter(size: 12, color: WaziColors.textAt(.5), letterSpacing: 1.5, weight: FontWeight.w600));
 }

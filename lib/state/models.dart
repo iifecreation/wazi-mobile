@@ -1,17 +1,24 @@
 enum AppScreen {
   splash,
   onboarding,
+  voiceWelcome,
   welcome,
   auth,
   login,
+  dashboard,
+  notifications,
+  notificationDetails,
   home,
   insights,
   settings,
   typing,
   scan,
+  services,
+  cards,
+  finance,
 }
 
-enum SheetType { confirm, pin, privacy, success, notif, support }
+enum SheetType { confirm, pin, privacy, success, support, bvn_input, nin_input }
 
 enum ChatRole { user, ai }
 

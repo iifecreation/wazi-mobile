@@ -10,52 +10,46 @@ class MicButton extends StatelessWidget {
   const MicButton({
     super.key,
     required this.listening,
-    required this.onTap,
+    required this.soundLevel,
+    this.onTap,
     this.size = 88,
     this.iconSize = 30,
   });
 
   final bool listening;
-  final VoidCallback onTap;
+  final double soundLevel;
+  final VoidCallback? onTap;
   final double size;
   final double iconSize;
 
   @override
   Widget build(BuildContext context) {
+    // Normalizing soundLevel (usually -50 to 50) to a positive scale modifier
+    final double normalizedSound = (soundLevel > 0 ? soundLevel : 0) / 20.0;
+    final double dynamicScale = 1.0 + (listening ? (normalizedSound.clamp(0.0, 1.5) * 0.4) : 0.0);
+
     return SizedBox(
       width: size + 22,
       height: size + 22,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          if (listening) ...[
-            PulseRing(
-              color: WaziColors.tealAt(.8),
-              size: size,
-              duration: const Duration(milliseconds: 2100),
-              strokeWidth: 1.5,
+          if (listening)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 100),
+              width: size * dynamicScale * 1.3,
+              height: size * dynamicScale * 1.3,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: WaziColors.teal.withValues(alpha: 0.2),
+              ),
             ),
-            PulseRing(
-              color: WaziColors.tealAt(.6),
-              size: size,
-              duration: const Duration(milliseconds: 2100),
-              delay: const Duration(milliseconds: 700),
-              strokeWidth: 1.5,
-            ),
-            PulseRing(
-              color: WaziColors.goldAt(.5),
-              size: size,
-              duration: const Duration(milliseconds: 2100),
-              delay: const Duration(milliseconds: 1400),
-              strokeWidth: 1.5,
-            ),
-          ],
           GestureDetector(
             onTap: onTap,
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              width: size,
-              height: size,
+              duration: const Duration(milliseconds: 100),
+              width: size * dynamicScale,
+              height: size * dynamicScale,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: LinearGradient(

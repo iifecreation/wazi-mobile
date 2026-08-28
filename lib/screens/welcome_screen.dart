@@ -51,7 +51,10 @@ class WelcomeScreen extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () => appState.go(AppScreen.auth),
+                    onPressed: () {
+                      appState.regStep = 0;
+                      appState.go(AppScreen.auth);
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: WaziColors.gold,
                       foregroundColor: WaziColors.bg,

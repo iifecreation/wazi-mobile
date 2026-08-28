@@ -115,11 +115,21 @@ class HomeScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                MicButton(listening: appState.listening, onTap: appState.onMic),
+                MicButton(listening: appState.listening, soundLevel: appState.soundLevel, onTap: appState.onMic),
                 const SizedBox(height: 12),
                 Text(
-                  appState.listening ? 'LISTENING' : 'TAP TO SPEAK',
-                  style: WaziText.inter(size: 12.5, letterSpacing: 2.0, color: appState.listening ? WaziColors.teal : WaziColors.textAt(.45)),
+                  appState.processing 
+                      ? 'PROCESSING...' 
+                      : appState.isSpeaking 
+                          ? 'SPEAKING...' 
+                          : appState.listening 
+                              ? 'LISTENING...'
+                              : 'TAP TO SPEAK',
+                  style: WaziText.inter(
+                    size: 12.5, 
+                    letterSpacing: 2.0, 
+                    color: appState.listening ? WaziColors.teal : WaziColors.textAt(.45)
+                  ),
                 ),
               ],
             ),

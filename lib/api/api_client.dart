@@ -26,7 +26,7 @@ class ApiException implements Exception {
 /// non-default port.
 class ApiClient {
   ApiClient({String? baseUrl})
-    : baseUrl = baseUrl ?? const String.fromEnvironment('WAZI_API_BASE_URL', defaultValue: 'http://127.0.0.1:8000');
+    : baseUrl = baseUrl ?? const String.fromEnvironment('WAZI_API_BASE_URL', defaultValue: 'http://127.0.0.1:8001');
 
   final String baseUrl;
   final http.Client _http = http.Client();

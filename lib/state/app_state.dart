@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import '../api/accounts_api.dart' as accounts_api;
 import '../api/api_client.dart';
@@ -51,6 +54,7 @@ String _newId() {
 class AppState extends ChangeNotifier {
   AppState() {
     _restoreSession();
+    _initStt();
   }
 
   final ApiClient _apiClient = ApiClient();
@@ -60,16 +64,24 @@ class AppState extends ChangeNotifier {
   late final PaymentsApi paymentsApi = PaymentsApi(_apiClient);
   late final SecurityApi securityApi = SecurityApi(_apiClient);
   late final RequestsApi requestsApi = RequestsApi(_apiClient);
+  final FlutterTts _tts = FlutterTts();
 
   /// Client-generated conversation id for /voice/query — the dialogue
-  /// manager keys its pending-confirmation state off this, same as a real
   /// ASR session would.
   final String sessionId = _newId();
 
   AppScreen screen = AppScreen.splash;
   int onb = 0;
   bool listening = false;
+  bool processing = false;
+  bool isSpeaking = false;
+  double soundLevel = 0.0;
+  String _sttWords = '';
+  final SpeechToText _stt = SpeechToText();
+  bool _sttInitialized = false;
+
   final List<ChatTurn> turns = [];
+  final List<ChatTurn> onboardingTurns = [];
   SheetType? sheet;
   String pin = '';
   bool speak = true;
@@ -92,7 +104,7 @@ class AppState extends ChangeNotifier {
   bool get isSignedIn => userId != null;
 
   // --- registration flow (auth_screen.dart) --------------------------------
-  // 0 phone+PIN · 1 BVN · 2 NIN · 3 address · 4 face · 5 voiceprint · 6 done
+  // 0 phone · 1 OTP · 2 Country · 3 Features · 4 Email · 5 Email OTP · 6 Password · 7 Personal · 8 address · 9 Identity (BVN/NIN) · 10 face · 11 voiceprint · 12 done
   int regStep = 0;
 
   // --- pending payment (confirm/pin/success sheets) -------------------------
@@ -129,20 +141,54 @@ class AppState extends ChangeNotifier {
   // --- session persistence --------------------------------------------------
   static const _prefsUserIdKey = 'wazi_user_id';
 
+  Future<void> _initStt() async {
+    _sttInitialized = await _stt.initialize(
+      onError: (val) {
+        listening = false;
+        notifyListeners();
+      },
+      onStatus: (val) {
+        if (val == 'done' || val == 'notListening') {
+          if (listening) {
+            listening = false;
+            soundLevel = 0.0;
+            notifyListeners();
+            if (_sttWords.isNotEmpty) {
+              final words = _sttWords;
+              _sttWords = '';
+              if (screen == AppScreen.voiceWelcome) {
+                runOnboardingTranscript(words);
+              } else if (screen == AppScreen.home) {
+                _runTranscript(words);
+              }
+            }
+          }
+        }
+      },
+    );
+
+    _tts.setCompletionHandler(() {
+      isSpeaking = false;
+      notifyListeners();
+      // Auto-start listening after AI speaks on the voice onboarding screen
+      if (screen == AppScreen.voiceWelcome) {
+        startListening();
+      }
+    });
+    
+    _tts.setStartHandler(() {
+      isSpeaking = true;
+      notifyListeners();
+    });
+  }
+
   Future<void> _restoreSession() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedUserId = prefs.getString(_prefsUserIdKey);
-    if (savedUserId == null) return;
-    userId = savedUserId;
-    try {
-      regStatus = await registrationApi.getStatus(savedUserId);
-      await refreshBalance();
-    } catch (_) {
-      // Server restarted (in-memory store) or the id is otherwise stale —
-      // fall back to a fresh sign-in instead of a broken "signed in" state.
-      userId = null;
-      await prefs.remove(_prefsUserIdKey);
-    }
+    
+    // Always clear session during testing so we start at the Welcome screen
+    userId = null;
+    await prefs.remove(_prefsUserIdKey);
+    
     notifyListeners();
   }
 
@@ -177,6 +223,11 @@ class AppState extends ChangeNotifier {
 
   void _push(ChatRole role, String text, {bool speaking = false}) {
     turns.add(ChatTurn(role: role, text: text, speaking: speaking));
+    if (role == ChatRole.ai && speaking) {
+      isSpeaking = true;
+      notifyListeners();
+      _tts.speak(text);
+    }
     notifyListeners();
   }
 
@@ -288,11 +339,109 @@ class AppState extends ChangeNotifier {
   // --- onboarding -----------------------------------------------------
   void onbNext() {
     if (onb == 2) {
-      go(AppScreen.welcome);
+      go(AppScreen.voiceWelcome);
     } else {
       onb += 1;
       notifyListeners();
     }
+  }
+
+  Future<void> runOnboardingTranscript(String transcript) async {
+    processing = true;
+    error = null;
+    notifyListeners();
+    
+    // Add user's transcript
+    onboardingTurns.add(ChatTurn(role: ChatRole.user, text: transcript));
+    notifyListeners();
+    
+    try {
+      final response = await voiceApi.onboarding(sessionId: sessionId, transcript: transcript);
+      processing = false;
+      
+      // Add AI's reply
+      onboardingTurns.add(ChatTurn(role: ChatRole.ai, text: response.replyText, speaking: speak));
+      if (speak) {
+        isSpeaking = true;
+        notifyListeners();
+        _tts.speak(response.replyText);
+      }
+      notifyListeners();
+      
+      if (response.clientAction == 'open_camera') {
+        // Mock opening camera and scanning document
+        _later(() {
+          runOnboardingTranscript('document_scanned');
+        }, const Duration(seconds: 3));
+      } else if (response.clientAction == 'open_bvn_modal') {
+        sheet = SheetType.bvn_input;
+        notifyListeners();
+      } else if (response.clientAction == 'open_nin_modal') {
+        sheet = SheetType.nin_input;
+        notifyListeners();
+      } else if (response.clientAction == 'onboarding_complete') {
+        // Give time for the user to hear the final message before navigating away
+        _later(() {
+          go(AppScreen.home);
+        }, const Duration(seconds: 2));
+      } else if (response.clientAction == 'fallback_to_traditional') {
+        _later(() {
+          go(AppScreen.auth);
+        }, const Duration(seconds: 2));
+      }
+      
+    } on ApiException catch (e) {
+      processing = false;
+      error = e.detail;
+      onboardingTurns.add(ChatTurn(role: ChatRole.ai, text: "Sorry, I couldn't reach the server: ${e.detail}"));
+      if (speak) {
+        isSpeaking = true;
+        notifyListeners();
+        _tts.speak("Sorry, I couldn't reach the server.");
+      }
+      notifyListeners();
+    }
+  }
+
+  void submitOnboardingBvn(String typedBvn) {
+    sheet = null;
+    notifyListeners();
+    runOnboardingTranscript("Here is my BVN: $typedBvn");
+  }
+
+  void submitOnboardingNin(String typedNin) {
+    sheet = null;
+    notifyListeners();
+    runOnboardingTranscript("Here is my NIN: $typedNin");
+  }
+
+  void startListening() async {
+    if (!_sttInitialized) return;
+    _sttWords = '';
+    listening = true;
+    soundLevel = 0.0;
+    notifyListeners();
+    
+    await _stt.listen(
+      onResult: (SpeechRecognitionResult result) {
+        _sttWords = result.recognizedWords;
+      },
+      onSoundLevelChange: (level) {
+        soundLevel = level;
+        notifyListeners();
+      },
+      listenOptions: SpeechListenOptions(
+        listenFor: const Duration(seconds: 15),
+        pauseFor: const Duration(milliseconds: 1500),
+      ),
+    );
+  }
+
+  void stopListening() async {
+    await _stt.stop();
+    listening = false;
+    soundLevel = 0.0;
+    notifyListeners();
   }
 
   void toOnboarding() {
@@ -322,16 +471,16 @@ class AppState extends ChangeNotifier {
   }
 
   // --- login (welcome screen "I already have an account") ------------------
-  Future<bool> login(String phoneNumber, String pinCode) async {
+  Future<bool> login(String phoneNumber, String password) async {
     busy = true;
     error = null;
     notifyListeners();
     try {
-      regStatus = await registrationApi.login(phoneNumber, pinCode);
+      regStatus = await registrationApi.login(phoneNumber, password);
       userId = regStatus!.userId;
       await _persistUserId(userId!);
       await refreshBalance();
-      go(AppScreen.home);
+      go(AppScreen.dashboard);
       return true;
     } on ApiException catch (e) {
       error = e.detail;
@@ -344,22 +493,101 @@ class AppState extends ChangeNotifier {
   }
 
   // --- registration steps (auth_screen.dart) --------------------------------
-  Future<bool> registerStart(String phoneNumber, String pinCode) async {
-    busy = true;
-    error = null;
-    notifyListeners();
+  Future<bool> submitPhoneStep(String phoneNumber) async {
+    busy = true; error = null; notifyListeners();
     try {
-      regStatus = await registrationApi.register(phoneNumber, pinCode);
-      userId = regStatus!.userId;
-      await _persistUserId(userId!);
+      await registrationApi.startPhone(phoneNumber);
       regStep = 1;
       return true;
     } on ApiException catch (e) {
-      error = e.detail;
-      return false;
+      error = e.detail; return false;
     } finally {
-      busy = false;
-      notifyListeners();
+      busy = false; notifyListeners();
+    }
+  }
+
+  Future<bool> submitPhoneOtpStep(String phoneNumber, String otp) async {
+    busy = true; error = null; notifyListeners();
+    try {
+      regStatus = await registrationApi.verifyPhone(phoneNumber, otp);
+      userId = regStatus!.userId;
+      await _persistUserId(userId!);
+      regStep = 2;
+      return true;
+    } on ApiException catch (e) {
+      error = e.detail; return false;
+    } finally {
+      busy = false; notifyListeners();
+    }
+  }
+
+  Future<bool> submitCountryStep(String country) async {
+    if (userId == null) return false;
+    busy = true; error = null; notifyListeners();
+    try {
+      regStatus = await registrationApi.submitCountry(userId!, country);
+      regStep = 3;
+      return true;
+    } on ApiException catch (e) {
+      error = e.detail; return false;
+    } finally {
+      busy = false; notifyListeners();
+    }
+  }
+
+  Future<bool> submitEmailStep(String email) async {
+    if (userId == null) return false;
+    busy = true; error = null; notifyListeners();
+    try {
+      await registrationApi.startEmail(userId!, email);
+      regStep = 5;
+      return true;
+    } on ApiException catch (e) {
+      error = e.detail; return false;
+    } finally {
+      busy = false; notifyListeners();
+    }
+  }
+
+  Future<bool> submitEmailOtpStep(String email, String otp) async {
+    if (userId == null) return false;
+    busy = true; error = null; notifyListeners();
+    try {
+      regStatus = await registrationApi.verifyEmail(userId!, email, otp);
+      regStep = 6;
+      return true;
+    } on ApiException catch (e) {
+      error = e.detail; return false;
+    } finally {
+      busy = false; notifyListeners();
+    }
+  }
+
+  Future<bool> submitPasswordStep(String password) async {
+    if (userId == null) return false;
+    busy = true; error = null; notifyListeners();
+    try {
+      regStatus = await registrationApi.submitPassword(userId!, password);
+      regStep = 7;
+      return true;
+    } on ApiException catch (e) {
+      error = e.detail; return false;
+    } finally {
+      busy = false; notifyListeners();
+    }
+  }
+
+  Future<bool> submitPersonalDetailsStep(String firstName, String lastName, String? otherName, String dob, String gender) async {
+    if (userId == null) return false;
+    busy = true; error = null; notifyListeners();
+    try {
+      regStatus = await registrationApi.submitProfileDetails(userId!, firstName, lastName, otherName, dob, gender);
+      regStep = 8;
+      return true;
+    } on ApiException catch (e) {
+      error = e.detail; return false;
+    } finally {
+      busy = false; notifyListeners();
     }
   }
 
@@ -370,7 +598,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       regStatus = await registrationApi.submitBvn(userId!, bvn);
-      regStep = 2;
       return true;
     } on ApiException catch (e) {
       error = e.detail;
@@ -388,7 +615,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       regStatus = await registrationApi.submitNin(userId!, nin);
-      regStep = 3;
       return true;
     } on ApiException catch (e) {
       error = e.detail;
@@ -397,6 +623,11 @@ class AppState extends ChangeNotifier {
       busy = false;
       notifyListeners();
     }
+  }
+
+  void completeIdentityVerification() {
+    regStep = 11;
+    notifyListeners();
   }
 
   /// Address capture is mocked — no real document upload backend, same
@@ -409,7 +640,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       regStatus = await registrationApi.submitAddress(userId!, 'addr_${userId}_utility_bill');
-      regStep = 4;
+      regStep = 9; // proceed to Identity Verification
       return true;
     } on ApiException catch (e) {
       error = e.detail;
@@ -430,7 +661,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       regStatus = await registrationApi.submitFace(userId!, 'face_${userId}_ok');
-      regStep = 5;
+      regStep = 12;
       return true;
     } on ApiException catch (e) {
       error = e.detail;
@@ -442,14 +673,43 @@ class AppState extends ChangeNotifier {
   }
 
   void skipRegStep() {
-    if (regStep < 4) regStep += 1;
+    if (regStep >= 9 && regStep < 11) regStep += 1;
     notifyListeners();
   }
 
-  Future<void> finishRegistration() async {
+  Future<bool> submitVoiceStep() async {
+    if (userId == null) return false;
+    busy = true; error = null; notifyListeners();
+    try {
+      regStatus = await registrationApi.submitVoice(userId!, 'voice_mock_123');
+      regStep = 13;
+      return true;
+    } on ApiException catch (e) {
+      error = e.detail; return false;
+    } finally {
+      busy = false; notifyListeners();
+    }
+  }
+
+  Future<bool> submitPinSetup(String pin) async {
+    if (userId == null) return false;
+    busy = true; error = null; notifyListeners();
+    try {
+      regStatus = await registrationApi.submitTransactionPin(userId!, pin);
+      regStep = 14;
+      return true;
+    } on ApiException catch (e) {
+      error = e.detail; return false;
+    } finally {
+      busy = false; notifyListeners();
+    }
+  }
+
+  Future<bool> finishRegistration() async {
     await refreshBalance();
-    regStep = 6;
-    go(AppScreen.home);
+    regStep = 15;
+    go(AppScreen.dashboard);
+    return true;
   }
 
   // --- voiceprint enrollment (auth screen, step 5) --------------------------
@@ -507,9 +767,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void openNotif() {
-    sheet = SheetType.notif;
-    notifyListeners();
+  Map<String, dynamic>? selectedNotification;
+
+  void openNotif() => go(AppScreen.notifications);
+
+  void openNotificationDetails(Map<String, dynamic> notif) {
+    selectedNotification = notif;
+    go(AppScreen.notificationDetails);
   }
 
   void openSupport() {
@@ -675,13 +939,10 @@ class AppState extends ChangeNotifier {
   // --- voice flows ---------------------------------------------------------
   void onMic() {
     if (listening) {
-      listening = false;
-      notifyListeners();
+      stopListening();
       return;
     }
-    const order = ['send', 'balance', 'spend', 'scan', 'pay_fees', 'request'];
-    final userCount = turns.where((t) => t.role == ChatRole.user).length;
-    run(order[userCount % order.length]);
+    startListening();
   }
 
   static const _kindPhrases = {
@@ -700,7 +961,7 @@ class AppState extends ChangeNotifier {
   /// POST /voice/query, push whatever Wazi-server actually says back.
   Future<void> _runTranscript(String transcript) async {
     if (userId == null) return;
-    listening = true;
+    processing = true;
     if (screen != AppScreen.insights) screen = AppScreen.home;
     sheet = null;
     notifyListeners();
@@ -708,7 +969,7 @@ class AppState extends ChangeNotifier {
 
     try {
       final turn = await voiceApi.query(sessionId: sessionId, userId: userId!, transcript: transcript);
-      listening = false;
+      processing = false;
       notifyListeners();
 
       if (turn.intent == 'check_balance' && !turn.needsClarification) {
@@ -769,7 +1030,7 @@ class AppState extends ChangeNotifier {
         }, const Duration(milliseconds: 700));
       }
     } on ApiException catch (e) {
-      listening = false;
+      processing = false;
       error = e.detail;
       _push(ChatRole.ai, "Sorry, I couldn't reach the server: ${e.detail}");
     }

@@ -48,4 +48,33 @@ class VoiceApi {
     });
     return DialogueTurnResponse.fromJson(json);
   }
+
+  Future<VoiceOnboardingResponse> onboarding({
+    required String sessionId,
+    required String transcript,
+  }) async {
+    final json = await _client.post('/voice/onboarding', {
+      'session_id': sessionId,
+      'transcript': transcript,
+    });
+    return VoiceOnboardingResponse.fromJson(json);
+  }
+}
+
+class VoiceOnboardingResponse {
+  VoiceOnboardingResponse({
+    required this.replyText,
+    required this.sessionId,
+    this.clientAction,
+  });
+
+  final String replyText;
+  final String sessionId;
+  final String? clientAction;
+
+  factory VoiceOnboardingResponse.fromJson(Map<String, dynamic> json) => VoiceOnboardingResponse(
+    replyText: json['reply_text'] as String,
+    sessionId: json['session_id'] as String,
+    clientAction: json['client_action'] as String?,
+  );
 }

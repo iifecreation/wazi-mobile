@@ -1,20 +1,26 @@
 import 'package:flutter/material.dart';
 
 import 'screens/auth_screen.dart';
+import 'screens/cards_screen.dart';
+import 'screens/dashboard_screen.dart';
+import 'screens/finance_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/insights_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/notification_details_screen.dart';
+import 'screens/notifications_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/scan_screen.dart';
+import 'screens/services_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/typing_screen.dart';
+import 'screens/voice_welcome_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'state/app_state.dart';
 import 'state/models.dart';
 import 'theme/colors.dart';
 import 'widgets/sheets/confirm_sheet.dart';
-import 'widgets/sheets/notif_sheet.dart';
 import 'widgets/sheets/pin_sheet.dart';
 import 'widgets/sheets/privacy_sheet.dart';
 import 'widgets/sheets/success_sheet.dart';
@@ -51,11 +57,11 @@ class _AppRootState extends State<AppRoot> {
 
   /// Each screen's own explicit back-button target, mirroring the design's
   /// onClick handlers (e.g. auth's "←" goes to welcome). Screens with no
-  /// explicit back affordance in the design (splash/onboarding/welcome/home)
+  /// explicit back affordance in the design (splash/onboarding/welcome/dashboard)
   /// fall through to normal system back behavior.
   bool get _canPopDirectly =>
       _appState.sheet == null &&
-      !{AppScreen.auth, AppScreen.login, AppScreen.insights, AppScreen.settings, AppScreen.scan, AppScreen.typing}
+      !{AppScreen.auth, AppScreen.login, AppScreen.insights, AppScreen.settings, AppScreen.scan, AppScreen.typing, AppScreen.home, AppScreen.notifications, AppScreen.notificationDetails, AppScreen.services}
           .contains(_appState.screen);
 
   void _handleBack() {
@@ -67,11 +73,18 @@ class _AppRootState extends State<AppRoot> {
       case AppScreen.auth:
       case AppScreen.login:
         _appState.go(AppScreen.welcome);
+      case AppScreen.home:
       case AppScreen.insights:
       case AppScreen.settings:
       case AppScreen.scan:
       case AppScreen.typing:
-        _appState.go(AppScreen.home);
+      case AppScreen.notifications:
+      case AppScreen.services:
+      case AppScreen.cards:
+      case AppScreen.finance:
+        _appState.go(AppScreen.dashboard);
+      case AppScreen.notificationDetails:
+        _appState.go(AppScreen.notifications);
       default:
         break;
     }
@@ -83,12 +96,22 @@ class _AppRootState extends State<AppRoot> {
         return SplashScreen(key: const ValueKey('splash'), appState: _appState);
       case AppScreen.onboarding:
         return OnboardingScreen(key: const ValueKey('onboarding'), appState: _appState);
+      case AppScreen.voiceWelcome:
+        return VoiceWelcomeScreen(key: const ValueKey('voiceWelcome'), appState: _appState);
       case AppScreen.welcome:
         return WelcomeScreen(key: const ValueKey('welcome'), appState: _appState);
       case AppScreen.auth:
         return AuthScreen(key: const ValueKey('auth'), appState: _appState);
       case AppScreen.login:
         return LoginScreen(key: const ValueKey('login'), appState: _appState);
+      case AppScreen.dashboard:
+        return DashboardScreen(key: const ValueKey('dashboard'), appState: _appState);
+      case AppScreen.notifications:
+        return NotificationsScreen(key: const ValueKey('notifications'), appState: _appState);
+      case AppScreen.notificationDetails:
+        return NotificationDetailsScreen(key: const ValueKey('notificationDetails'), appState: _appState);
+      case AppScreen.services:
+        return ServicesScreen(key: const ValueKey('services'), appState: _appState);
       case AppScreen.home:
         return HomeScreen(key: const ValueKey('home'), appState: _appState);
       case AppScreen.insights:
@@ -99,6 +122,10 @@ class _AppRootState extends State<AppRoot> {
         return TypingScreen(key: const ValueKey('typing'), appState: _appState);
       case AppScreen.scan:
         return ScanScreen(key: const ValueKey('scan'), appState: _appState);
+      case AppScreen.cards:
+        return CardsScreen(key: const ValueKey('cards'), appState: _appState);
+      case AppScreen.finance:
+        return FinanceScreen(key: const ValueKey('finance'), appState: _appState);
     }
   }
 
@@ -112,10 +139,10 @@ class _AppRootState extends State<AppRoot> {
         return PrivacySheet(appState: _appState);
       case SheetType.success:
         return SuccessSheet(appState: _appState);
-      case SheetType.notif:
-        return NotifSheet(appState: _appState);
       case SheetType.support:
         return SupportSheet(appState: _appState);
+      case SheetType.bvn_input:
+      case SheetType.nin_input:
       case null:
         return null;
     }
