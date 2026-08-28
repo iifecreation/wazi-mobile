@@ -171,22 +171,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _QuickAction(
                         icon: Icons.arrow_upward_rounded,
                         label: 'Send money',
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Send money coming soon!'))),
+                        onTap: () => widget.appState.go(AppScreen.sendMoney),
                       ),
                       _QuickAction(
                         icon: Icons.attach_money_rounded,
                         label: 'International',
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('International coming soon!'))),
+                        onTap: () => widget.appState.go(AppScreen.international),
                       ),
                       _QuickAction(
                         icon: Icons.receipt_long_rounded,
                         label: 'Airtime & data',
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Airtime coming soon!'))),
+                        onTap: () => widget.appState.go(AppScreen.airtime),
                       ),
                       _QuickAction(
                         icon: Icons.payment_rounded,
                         label: 'Pay bills',
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pay bills coming soon!'))),
+                        onTap: () => widget.appState.go(AppScreen.payBills),
                       ),
                       _QuickAction(
                         icon: Icons.qr_code_scanner_rounded,
@@ -197,17 +197,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _QuickAction(
                         icon: Icons.arrow_downward_rounded,
                         label: 'Request',
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Request coming soon!'))),
+                        onTap: () => widget.appState.go(AppScreen.requestMoney),
                       ),
                       _QuickAction(
                         icon: Icons.credit_card_outlined,
                         label: 'Cards',
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cards coming soon!'))),
+                        onTap: () => widget.appState.go(AppScreen.cards),
                       ),
                       _QuickAction(
                         icon: Icons.track_changes_rounded,
                         label: 'Savings',
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Savings coming soon!'))),
+                        onTap: () => widget.appState.go(AppScreen.savings),
                       ),
                       _QuickAction(
                         icon: Icons.grid_view_rounded,

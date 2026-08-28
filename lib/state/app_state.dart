@@ -451,12 +451,7 @@ class AppState extends ChangeNotifier {
   }
 
   // --- typing / bank mode ----------------------------------------------
-  void toTyping() {
-    screen = AppScreen.typing;
-    tab = BankTab.bank;
-    sheet = null;
-    notifyListeners();
-  }
+
 
   void toBank() {
     tab = BankTab.bank;
@@ -464,7 +459,7 @@ class AppState extends ChangeNotifier {
   }
 
   void toChat() {
-    screen = AppScreen.typing;
+    screen = AppScreen.home;
     tab = BankTab.chat;
     sheet = null;
     notifyListeners();

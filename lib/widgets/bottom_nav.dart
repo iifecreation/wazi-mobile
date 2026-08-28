@@ -13,7 +13,7 @@ class WaziBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Determine active tab based on current screen
-    final isBank = appState.screen == AppScreen.dashboard || (appState.screen == AppScreen.typing && appState.tab == BankTab.bank);
+    final isBank = appState.screen == AppScreen.dashboard;
     final isCards = appState.screen == AppScreen.cards;
     final isFinance = appState.screen == AppScreen.finance;
     final isSettings = appState.screen == AppScreen.settings;

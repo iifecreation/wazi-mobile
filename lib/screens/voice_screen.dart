@@ -7,16 +7,16 @@ import '../theme/text_styles.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/mic_button.dart';
 
-class VoiceWelcomeScreen extends StatefulWidget {
-  const VoiceWelcomeScreen({super.key, required this.appState});
+class VoiceScreen extends StatefulWidget {
+  const VoiceScreen({super.key, required this.appState});
 
   final AppState appState;
 
   @override
-  State<VoiceWelcomeScreen> createState() => _VoiceWelcomeScreenState();
+  State<VoiceScreen> createState() => _VoiceScreenState();
 }
 
-class _VoiceWelcomeScreenState extends State<VoiceWelcomeScreen> {
+class _VoiceScreenState extends State<VoiceScreen> {
   final ScrollController _scrollController = ScrollController();
 
   final TextEditingController _sensitiveInputController = TextEditingController();
@@ -26,7 +26,15 @@ class _VoiceWelcomeScreenState extends State<VoiceWelcomeScreen> {
     super.initState();
     // Kick off the conversation with an empty transcript to get the AI's greeting
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      widget.appState.runOnboardingTranscript('');
+      if (widget.appState.userId == null) {
+        if (widget.appState.onboardingTurns.isEmpty) {
+          widget.appState.runOnboardingTranscript('');
+        }
+      } else {
+        if (widget.appState.turns.isEmpty) {
+          widget.appState.run('');
+        }
+      }
     });
   }
 
@@ -49,6 +57,9 @@ class _VoiceWelcomeScreenState extends State<VoiceWelcomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isLoggedIn = widget.appState.userId != null;
+    final turns = isLoggedIn ? widget.appState.turns : widget.appState.onboardingTurns;
+
     // Auto-scroll when turns change
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
@@ -66,7 +77,7 @@ class _VoiceWelcomeScreenState extends State<VoiceWelcomeScreen> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       TextButton(
-                        onPressed: () => widget.appState.go(AppScreen.welcome),
+                        onPressed: () => widget.appState.go(isLoggedIn ? AppScreen.dashboard : AppScreen.welcome),
                         child: Text('Traditional', style: WaziText.inter(size: 15, color: WaziColors.teal, weight: FontWeight.w500)),
                       ),
                     ],
@@ -78,15 +89,15 @@ class _VoiceWelcomeScreenState extends State<VoiceWelcomeScreen> {
                   child: ListView.separated(
                     controller: _scrollController,
                     padding: const EdgeInsets.fromLTRB(24, 20, 24, 120),
-                    itemCount: widget.appState.onboardingTurns.length,
+                    itemCount: turns.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 24),
                     itemBuilder: (context, i) {
-                      final t = widget.appState.onboardingTurns[i];
+                      final t = turns[i];
                       // If it's an empty transcript from the kick-off, don't show the user bubble
                       if (t.role == ChatRole.user && t.text.trim().isEmpty) {
                         return const SizedBox.shrink();
                       }
-                      final isLatestAi = (t.role == ChatRole.ai) && (i == widget.appState.onboardingTurns.length - 1);
+                      final isLatestAi = (t.role == ChatRole.ai) && (i == turns.length - 1);
                       return ChatBubble(turn: t, showSpeaking: isLatestAi && t.speaking);
                     },
                   ),

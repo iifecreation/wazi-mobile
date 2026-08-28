@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../state/app_state.dart';
+import '../../state/models.dart';
 import '../../theme/colors.dart';
 import '../../theme/text_styles.dart';
 import '../pulse_ring.dart';
@@ -70,7 +71,10 @@ class _SuccessSheetState extends State<SuccessSheet> with SingleTickerProviderSt
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: widget.appState.toTyping,
+                  onPressed: () {
+                    widget.appState.finishSuccess();
+                    widget.appState.go(AppScreen.transactionHistory);
+                  },
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: WaziColors.textAt(.18)),
                     padding: const EdgeInsets.symmetric(vertical: 17),

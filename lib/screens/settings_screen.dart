@@ -6,6 +6,7 @@ import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
 import '../widgets/pill_toggle.dart';
+import '../widgets/bottom_nav.dart';
 
 const _langs = ['English', 'Pidgin', 'Yoruba', 'Igbo', 'Hausa', 'Swahili', 'French'];
 
@@ -29,175 +30,265 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = widget.appState;
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(22, 20, 22, 34),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () => appState.go(AppScreen.home),
-                  icon: const Icon(Icons.arrow_back, color: Colors.white54),
-                  padding: EdgeInsets.zero,
-                ),
-                const SizedBox(width: 6),
-                Text('Settings', style: WaziText.grotesk(size: 26, weight: FontWeight.w600, letterSpacing: -0.5)),
-              ],
-            ),
-            const SizedBox(height: 28),
-            _sectionLabel('VOICE & AI'),
-            const SizedBox(height: 10),
-            _Card(children: [
-              _ToggleRow(
-                title: 'Speak responses aloud',
-                subtitle: 'Wazi replies with voice, not just text',
-                value: appState.speak,
-                onTap: appState.toggleSpeak,
-              ),
-              _ToggleRow(
-                title: 'Ask before sensitive info',
-                subtitle: "Check I'm private before saying balances",
-                value: appState.ask,
-                onTap: appState.toggleAsk,
-              ),
-              _ToggleRow(
-                title: 'Earpiece connected',
-                subtitle: 'Demo toggle — skips the privacy check',
-                value: appState.head,
-                onTap: appState.toggleHead,
-              ),
-              _NavRow(
-                title: 'Re-record voiceprint',
-                trailing: appState.enrolling ? 'Listening…' : (appState.enrolled ? 'Saved just now →' : 'Tap to record →'),
-                trailingColor: WaziColors.teal,
-                onTap: appState.enrolling ? () {} : appState.startEnroll,
-                isLast: true,
-              ),
-            ]),
-            const SizedBox(height: 26),
-            _sectionLabel('SECURITY'),
-            const SizedBox(height: 10),
-            _Card(children: [
-              _NavRow(title: 'Change PIN', trailing: '→', trailingColor: WaziColors.textAt(.4), onTap: appState.openPin),
-              _ToggleRow(
-                title: 'Face ID for large transfers',
-                value: appState.face,
-                onTap: appState.toggleFace,
-                isLast: true,
-              ),
+    final name = appState.regStatus?.firstName ?? 'USER';
+    final balance = '₦23,554.90';
+    
+    return Scaffold(
+      backgroundColor: WaziColors.bg,
+      bottomNavigationBar: WaziBottomNav(appState: appState),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Daily voice-transfer limit', style: WaziText.inter(size: 15)),
-                        Text(
-                          appState.regStatus?.limits.dailyLimitFormatted ?? '···',
-                          style: WaziText.grotesk(size: 15, weight: FontWeight.w500, color: WaziColors.gold),
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
+                          child: const Center(child: Icon(Icons.person_outline_rounded, color: Colors.white)),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Hi, $name', style: WaziText.grotesk(size: 20, weight: FontWeight.w600, color: Colors.white)),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: WaziColors.gold.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.workspace_premium_rounded, size: 12, color: WaziColors.gold),
+                                  const SizedBox(width: 4),
+                                  Text('Upgrade to Tier 2', style: WaziText.inter(size: 10, color: WaziColors.gold, weight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    const SizedBox(height: 9),
-                    Text(
-                      appState.regStatus != null
-                          ? 'Tier ${appState.regStatus!.tier}${appState.regStatus!.limits.maxBalanceFormatted != null ? ' · balance up to ${appState.regStatus!.limits.maxBalanceFormatted}' : ' · no balance cap'}. Resets daily.'
-                          : 'Sign in to see your tier limit.',
-                      style: WaziText.inter(size: 12, color: WaziColors.textAt(.4)),
+                    Stack(
+                      children: [
+                        IconButton(
+                          onPressed: () => appState.go(AppScreen.appSettings),
+                          icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 28),
+                        ),
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-            ]),
-            const SizedBox(height: 26),
-            _sectionLabel('EMERGENCY'),
-            const SizedBox(height: 10),
-            _Card(children: [
-              _NavRow(
-                title: 'Duress PIN',
-                trailing: (appState.duressStatus?.hasDuressPin ?? false) ? 'Set →' : 'Set up →',
-                trailingColor: WaziColors.teal,
-                onTap: () => _showSetDuressPinDialog(context, appState),
-              ),
-              _NavRow(
-                title: 'Trusted contact',
-                trailing: appState.duressStatus?.hasTrustedContact ?? false ? 'Set →' : 'Add →',
-                trailingColor: WaziColors.teal,
-                onTap: () => _showSetTrustedContactDialog(context, appState),
-                isLast: true,
-              ),
+              const SizedBox(height: 24),
+              
+              // Balance Section
               Padding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 17),
-                child: Text(
-                  'If you\'re ever forced to pay, enter your duress PIN instead of your real one at the PIN sheet. '
-                  'It looks and sounds exactly like a normal successful payment — no money actually moves, and your '
-                  'trusted contact is quietly alerted.',
-                  style: WaziText.inter(size: 12, color: WaziColors.textAt(.4), height: 1.4),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 26),
-            _sectionLabel('MONEY REQUESTS'),
-            const SizedBox(height: 10),
-            if (appState.requestInbox == null)
-              const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Center(child: CircularProgressIndicator()))
-            else if (appState.requestInbox!.where((r) => r.status == 'pending').isEmpty)
-              _Card(children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
-                  child: Text(
-                    'Nothing waiting on you right now. Say "I need 5000 naira from Mum for data" to send a request '
-                    'the other way.',
-                    style: WaziText.inter(size: 13, color: WaziColors.textAt(.5), height: 1.4),
-                  ),
-                ),
-              ])
-            else
-              _Card(
-                children: appState.requestInbox!.where((r) => r.status == 'pending').toList().asMap().entries.map((e) {
-                  final isLast = e.key == appState.requestInbox!.where((r) => r.status == 'pending').length - 1;
-                  return _RequestRow(request: e.value, appState: appState, isLast: isLast);
-                }).toList(),
-              ),
-            const SizedBox(height: 26),
-            _sectionLabel('PREFERENCES'),
-            const SizedBox(height: 10),
-            _Card(children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
-                child: Column(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Voice language', style: WaziText.inter(size: 15)),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 7,
-                      runSpacing: 7,
-                      children: _langs.map((l) {
-                        final active = appState.lang == l;
-                        return GestureDetector(
-                          onTap: () => appState.pickLang(l),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(999),
-                              color: active ? WaziColors.tealAt(.14) : Colors.transparent,
-                              border: Border.all(color: active ? WaziColors.tealAt(.5) : WaziColors.textAt(.12)),
-                            ),
-                            child: Text(l, style: WaziText.inter(size: 12.5, color: active ? WaziColors.teal : WaziColors.textAt(.7))),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text('Total Balance', style: WaziText.inter(size: 14, color: WaziColors.textAt(0.7))),
+                            const SizedBox(width: 8),
+                            Icon(Icons.visibility_rounded, size: 16, color: WaziColors.textAt(0.5)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(balance, style: WaziText.grotesk(size: 32, weight: FontWeight.w700, color: Colors.white)),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(999),
                           ),
-                        );
-                      }).toList(),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Interest Credited Today ', style: WaziText.inter(size: 12, color: WaziColors.textAt(0.5))),
+                              Text('+\$0.09', style: WaziText.inter(size: 12, weight: FontWeight.w600, color: Colors.green)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.green.withValues(alpha: 0.1),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
+                        boxShadow: [
+                          BoxShadow(color: Colors.green.withValues(alpha: 0.1), blurRadius: 20, spreadRadius: 5),
+                        ],
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.verified_user_rounded, color: Colors.greenAccent, size: 32),
+                      ),
                     ),
                   ],
                 ),
               ),
-              _NavRow(title: 'Notifications', trailing: 'All transfers →', trailingColor: WaziColors.textAt(.45), onTap: appState.openNotif, isLast: true),
-            ]),
+              const SizedBox(height: 24),
+              
+              // Security Check Banner
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.shield_rounded, size: 16, color: Colors.greenAccent),
+                                const SizedBox(width: 8),
+                                Text('Security Check is not turned on', style: WaziText.inter(size: 12, weight: FontWeight.w600, color: Colors.greenAccent)),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text('Make your account more secure with extra safety checks.', style: WaziText.inter(size: 11, color: Colors.white70)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        onPressed: () {},
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                        ),
+                        child: Text('Turn On', style: WaziText.inter(size: 12, weight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Settings Blocks
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.03),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildSettingsRow(icon: Icons.receipt_long_rounded, color: Colors.greenAccent, title: 'Transaction History', onTap: () => appState.go(AppScreen.transactionHistory)),
+                      _buildSettingsRow(icon: Icons.speed_rounded, color: Colors.greenAccent, title: 'Account Limits', subtitle: 'View your transaction limits', onTap: () => appState.go(AppScreen.accountLimits)),
+                      _buildSettingsRow(icon: Icons.credit_card_rounded, color: Colors.greenAccent, title: 'Bank Card/Account', subtitle: 'Add payment option', onTap: () => appState.go(AppScreen.bankCards)),
+                      _buildSettingsRow(icon: Icons.storefront_rounded, color: Colors.greenAccent, title: 'My BizPayment', subtitle: 'Receive payment for business', onTap: () => appState.go(AppScreen.bizPayment)),
+                      _buildSettingsRow(icon: Icons.people_alt_rounded, color: Colors.greenAccent, title: 'OJunior', subtitle: 'Create an account for your child/ward', isLast: true, onTap: () => appState.go(AppScreen.oJunior)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.03),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildSettingsRow(icon: Icons.security_rounded, color: Colors.greenAccent, title: 'Security Center', subtitle: 'Protect your funds', onTap: () => appState.go(AppScreen.securityCenter)),
+                      _buildSettingsRow(icon: Icons.support_agent_rounded, color: Colors.greenAccent, title: 'Customer Service Center', onTap: () => appState.go(AppScreen.customerService)),
+                      _buildSettingsRow(icon: Icons.celebration_rounded, color: Colors.greenAccent, title: 'Invitation', subtitle: 'Invite friends and earn up to \$10 Bonus', onTap: () => appState.go(AppScreen.invitation)),
+                      _buildSettingsRow(icon: Icons.phone_in_talk_rounded, color: Colors.greenAccent, title: 'Wazi USSD', onTap: () => appState.go(AppScreen.ussd)),
+                      _buildSettingsRow(icon: Icons.star_rate_rounded, color: Colors.greenAccent, title: 'Rate Us', isLast: true, onTap: () => appState.go(AppScreen.rateUs)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.account_balance_rounded, size: 16, color: Colors.white54),
+                    const SizedBox(width: 8),
+                    Text('Licensed by the CBN and insured by the NDIC', style: WaziText.inter(size: 11, color: Colors.white54)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsRow({required IconData icon, required Color color, required String title, String? subtitle, bool isLast = false, VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          border: isLast ? null : Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: WaziText.inter(size: 15, weight: FontWeight.w500, color: Colors.white)),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 4),
+                    Text(subtitle, style: WaziText.inter(size: 12, color: WaziColors.textAt(0.45))),
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: WaziColors.textAt(0.3), size: 20),
           ],
         ),
       ),
