@@ -283,6 +283,8 @@ class _AppRootState extends State<AppRoot> {
         return SupportSheet(appState: _appState);
       case SheetType.bvn_input:
       case SheetType.nin_input:
+      case SheetType.password_input:
+      case SheetType.transaction_pin_input:
       case null:
         return null;
     }

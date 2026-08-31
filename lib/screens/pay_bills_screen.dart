@@ -5,10 +5,49 @@ import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
 
-class PayBillsScreen extends StatelessWidget {
+import '../api/bills_api.dart';
+
+class PayBillsScreen extends StatefulWidget {
   const PayBillsScreen({super.key, required this.appState});
 
   final AppState appState;
+
+  @override
+  State<PayBillsScreen> createState() => _PayBillsScreenState();
+}
+
+class _PayBillsScreenState extends State<PayBillsScreen> {
+  bool _loading = true;
+  String? _error;
+  BillsResponse? _data;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final userId = widget.appState.userId;
+    if (userId == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
+      final res = await widget.appState.billsApi.getBills(userId);
+      if (!mounted) return;
+      setState(() {
+        _data = res;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Failed to load bills data';
+        _loading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +61,7 @@ class PayBillsScreen extends StatelessWidget {
               child: Row(
                 children: [
                   GestureDetector(
-                    onTap: () => appState.go(AppScreen.services),
+                    onTap: () => widget.appState.go(AppScreen.services),
                     child: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: WaziColors.text),
                   ),
                   const SizedBox(width: 16),
@@ -46,8 +85,8 @@ class PayBillsScreen extends StatelessWidget {
                       crossAxisSpacing: 16,
                       childAspectRatio: 1.5,
                       children: [
-                        _buildCategoryCard(icon: Icons.bolt_rounded, label: 'Electricity', color: Colors.orange, onTap: () => appState.go(AppScreen.electricity)),
-                        _buildCategoryCard(icon: Icons.tv_rounded, label: 'Cable TV', color: Colors.blue, onTap: () => appState.go(AppScreen.cableTv)),
+                        _buildCategoryCard(icon: Icons.bolt_rounded, label: 'Electricity', color: Colors.orange, onTap: () => widget.appState.go(AppScreen.electricity)),
+                        _buildCategoryCard(icon: Icons.tv_rounded, label: 'Cable TV', color: Colors.blue, onTap: () => widget.appState.go(AppScreen.cableTv)),
                         _buildCategoryCard(icon: Icons.wifi_rounded, label: 'Internet', color: Colors.green, onTap: () {}),
                         _buildCategoryCard(icon: Icons.water_drop_rounded, label: 'Water', color: Colors.cyan, onTap: () {}),
                         _buildCategoryCard(icon: Icons.school_rounded, label: 'Education', color: Colors.purple, onTap: () {}),
@@ -56,10 +95,32 @@ class PayBillsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 32),
                     Text('Recent Bills', style: WaziText.grotesk(size: 16, weight: FontWeight.w600, color: WaziColors.textAt(0.7))),
-                    const SizedBox(height: 16),
-                    _buildRecentBill(title: 'Ikeja Electric', amount: '\$45.00', date: 'Aug 12, 2026', icon: Icons.bolt_rounded, color: Colors.orange),
-                    _buildRecentBill(title: 'DSTV Premium', amount: '\$24.99', date: 'Jul 28, 2026', icon: Icons.tv_rounded, color: Colors.blue),
-                    _buildRecentBill(title: 'Spectranet', amount: '\$60.00', date: 'Jul 15, 2026', icon: Icons.wifi_rounded, color: Colors.green),
+                    if (_loading)
+                      const Center(child: CircularProgressIndicator())
+                    else if (_error != null)
+                      Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+                    else if (_data != null)
+                      ..._data!.recentBills.map((b) {
+                        Color color;
+                        if (b.color == 'orange') color = Colors.orange;
+                        else if (b.color == 'blue') color = Colors.blue;
+                        else if (b.color == 'green') color = Colors.green;
+                        else color = Colors.grey;
+                        
+                        IconData icon;
+                        if (b.icon == 'bolt_rounded') icon = Icons.bolt_rounded;
+                        else if (b.icon == 'tv_rounded') icon = Icons.tv_rounded;
+                        else if (b.icon == 'wifi_rounded') icon = Icons.wifi_rounded;
+                        else icon = Icons.receipt_rounded;
+                        
+                        return _buildRecentBill(
+                          title: b.title,
+                          amount: b.amount,
+                          date: b.date,
+                          icon: icon,
+                          color: color,
+                        );
+                      }),
                     const SizedBox(height: 32),
                   ],
                 ),

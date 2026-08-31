@@ -105,8 +105,11 @@ class _VoiceScreenState extends State<VoiceScreen> {
               ],
             ),
             
-            // Sensitive Data Overlay
-            if (widget.appState.sheet == SheetType.bvn_input || widget.appState.sheet == SheetType.nin_input)
+            // Sensitive Data Overlay — BVN, NIN, login password, and
+            // transaction PIN all land here: typed on screen, never
+            // spoken or sent as a voice transcript. See
+            // app/dialogue/onboarding.py's module docstring for why.
+            if (_sensitiveSheetTypes.contains(widget.appState.sheet))
               Positioned.fill(
                 child: Container(
                   color: Colors.black54,
@@ -123,7 +126,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            widget.appState.sheet == SheetType.bvn_input ? 'Enter your BVN' : 'Enter your NIN',
+                            _sensitiveFieldTitle(widget.appState.sheet),
                             style: WaziText.grotesk(size: 20, weight: FontWeight.w600),
                           ),
                           const SizedBox(height: 12),
@@ -141,11 +144,12 @@ class _VoiceScreenState extends State<VoiceScreen> {
                             ),
                             child: TextField(
                               controller: _sensitiveInputController,
-                              keyboardType: TextInputType.number,
+                              keyboardType: _sensitiveFieldIsNumeric(widget.appState.sheet) ? TextInputType.number : TextInputType.visiblePassword,
+                              obscureText: _sensitiveFieldObscured(widget.appState.sheet),
                               style: WaziText.grotesk(size: 17, weight: FontWeight.w500, letterSpacing: 1.0),
                               decoration: InputDecoration(
                                 border: InputBorder.none,
-                                hintText: widget.appState.sheet == SheetType.bvn_input ? '11-digit BVN' : '11-digit NIN',
+                                hintText: _sensitiveFieldHint(widget.appState.sheet),
                                 hintStyle: WaziText.grotesk(size: 17, weight: FontWeight.w500, letterSpacing: 1.0, color: WaziColors.textAt(.3)),
                               ),
                             ),
@@ -157,11 +161,21 @@ class _VoiceScreenState extends State<VoiceScreen> {
                               onPressed: () {
                                 final text = _sensitiveInputController.text.trim();
                                 if (text.isEmpty) return;
-                                
-                                if (widget.appState.sheet == SheetType.bvn_input) {
-                                  widget.appState.submitOnboardingBvn(text);
-                                } else {
-                                  widget.appState.submitOnboardingNin(text);
+                                switch (widget.appState.sheet) {
+                                  case SheetType.bvn_input:
+                                    widget.appState.submitOnboardingBvn(text);
+                                    break;
+                                  case SheetType.nin_input:
+                                    widget.appState.submitOnboardingNin(text);
+                                    break;
+                                  case SheetType.password_input:
+                                    widget.appState.submitOnboardingPassword(text);
+                                    break;
+                                  case SheetType.transaction_pin_input:
+                                    widget.appState.submitOnboardingTransactionPin(text);
+                                    break;
+                                  default:
+                                    break;
                                 }
                                 _sensitiveInputController.clear();
                               },
@@ -198,6 +212,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
           MicButton(
             listening: widget.appState.listening,
             soundLevel: widget.appState.soundLevel,
+            onTap: widget.appState.toggleListening,
           ),
           const SizedBox(height: 12),
           Text(
@@ -219,3 +234,46 @@ class _VoiceScreenState extends State<VoiceScreen> {
     );
   }
 }
+
+const _sensitiveSheetTypes = {
+  SheetType.bvn_input,
+  SheetType.nin_input,
+  SheetType.password_input,
+  SheetType.transaction_pin_input,
+};
+
+String _sensitiveFieldTitle(SheetType? sheet) {
+  switch (sheet) {
+    case SheetType.bvn_input:
+      return 'Enter your BVN';
+    case SheetType.nin_input:
+      return 'Enter your NIN';
+    case SheetType.password_input:
+      return 'Set your login password';
+    case SheetType.transaction_pin_input:
+      return 'Set your transaction PIN';
+    default:
+      return '';
+  }
+}
+
+String _sensitiveFieldHint(SheetType? sheet) {
+  switch (sheet) {
+    case SheetType.bvn_input:
+      return '11-digit BVN';
+    case SheetType.nin_input:
+      return '11-digit NIN';
+    case SheetType.password_input:
+      return 'Password';
+    case SheetType.transaction_pin_input:
+      return '4-digit PIN';
+    default:
+      return '';
+  }
+}
+
+bool _sensitiveFieldIsNumeric(SheetType? sheet) =>
+    sheet == SheetType.bvn_input || sheet == SheetType.nin_input || sheet == SheetType.transaction_pin_input;
+
+bool _sensitiveFieldObscured(SheetType? sheet) =>
+    sheet == SheetType.password_input || sheet == SheetType.transaction_pin_input;

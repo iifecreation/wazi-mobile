@@ -5,6 +5,7 @@ import '../state/app_state.dart';
 import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
+import '../api/accounts_api.dart';
 import '../widgets/bottom_nav.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -19,6 +20,38 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   bool _hideBalance = false;
   final PageController _pageController = PageController(viewportFraction: 0.9);
+
+  bool _loadingTxs = true;
+  String? _txError;
+  List<TransactionOut> _recentTxs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTxs();
+  }
+
+  Future<void> _loadTxs() async {
+    final userId = widget.appState.userId;
+    if (userId == null) {
+      if (mounted) setState(() => _loadingTxs = false);
+      return;
+    }
+    try {
+      final res = await widget.appState.accountsApi.getTransactions(userId);
+      if (!mounted) return;
+      setState(() {
+        _recentTxs = res.transactions.take(3).toList();
+        _loadingTxs = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _txError = 'Could not load transactions';
+        _loadingTxs = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -231,18 +264,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Recent Activity', style: WaziText.grotesk(size: 18, weight: FontWeight.w600, color: Colors.white)),
-                      const SizedBox(height: 64),
-                      Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.receipt_long_outlined, size: 48, color: WaziColors.textAt(0.2)),
-                            const SizedBox(height: 16),
-                            Text('No recent transactions', style: WaziText.inter(size: 14, color: WaziColors.textAt(0.5))),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 64),
+                      const SizedBox(height: 24),
+                      _loadingTxs 
+                        ? const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
+                        : _txError != null 
+                          ? Center(child: Padding(padding: EdgeInsets.all(24), child: Text(_txError!, style: TextStyle(color: Colors.red))))
+                          : _recentTxs.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const SizedBox(height: 40),
+                                    Icon(Icons.receipt_long_outlined, size: 48, color: WaziColors.textAt(0.2)),
+                                    const SizedBox(height: 16),
+                                    Text('No recent transactions', style: WaziText.inter(size: 14, color: WaziColors.textAt(0.5))),
+                                    const SizedBox(height: 40),
+                                  ],
+                                ),
+                              )
+                            : Column(
+                                children: _recentTxs.map((tx) {
+                                  final isCredit = tx.direction == 'in';
+                                  IconData icon = isCredit ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
+                                  if (tx.category == 'airtime') icon = Icons.phone_android_rounded;
+                                  if (tx.category == 'electricity') icon = Icons.lightbulb_outline_rounded;
+                                  
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 16),
+                                    child: _TransactionTile(
+                                      title: tx.counterparty.isEmpty ? tx.description : tx.counterparty,
+                                      subtitle: '${tx.occurredAt.month}/${tx.occurredAt.day} • ${tx.category}',
+                                      amount: '${isCredit ? '+' : '-'}${tx.amountFormatted}',
+                                      isCredit: isCredit,
+                                      status: 'Success', // Mocked as API doesn't return status yet
+                                      icon: icon,
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
                     ],
                   ),
                 ),
@@ -524,6 +583,90 @@ class _QuickAction extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TransactionTile extends StatelessWidget {
+  const _TransactionTile({
+    required this.title,
+    required this.subtitle,
+    required this.amount,
+    required this.isCredit,
+    required this.status,
+    required this.icon,
+    this.isFailed = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final String amount;
+  final bool isCredit;
+  final String status;
+  final IconData icon;
+  final bool isFailed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: isCredit ? Colors.greenAccent.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.05),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            icon,
+            color: isCredit ? Colors.greenAccent : Colors.white,
+            size: 20,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: WaziText.inter(size: 15, weight: FontWeight.w600, color: Colors.white),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: WaziText.inter(size: 12, color: Colors.white54),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              amount,
+              style: WaziText.inter(
+                size: 15, 
+                weight: FontWeight.w700, 
+                color: isCredit ? Colors.greenAccent : Colors.white,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              status,
+              style: WaziText.inter(
+                size: 11, 
+                color: isFailed ? Colors.redAccent : (status == 'Success' ? Colors.white54 : WaziColors.gold),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

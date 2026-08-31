@@ -3,11 +3,50 @@ import '../state/app_state.dart';
 import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
+import '../api/accounts_api.dart';
 
-class TransactionHistoryScreen extends StatelessWidget {
+class TransactionHistoryScreen extends StatefulWidget {
   const TransactionHistoryScreen({super.key, required this.appState});
 
   final AppState appState;
+
+  @override
+  State<TransactionHistoryScreen> createState() => _TransactionHistoryScreenState();
+}
+
+class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
+  TransactionHistoryResponse? _response;
+  bool _loading = true;
+  String? _error;
+  String _filter = 'All';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final userId = widget.appState.userId;
+    if (userId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final res = await widget.appState.accountsApi.getTransactions(userId);
+      if (!mounted) return;
+      setState(() {
+        _response = res;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Failed to load transactions';
+        _loading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +61,7 @@ class TransactionHistoryScreen extends StatelessWidget {
               child: Row(
                 children: [
                   IconButton(
-                    onPressed: () => appState.go(AppScreen.settings),
+                    onPressed: () => widget.appState.go(AppScreen.settings),
                     icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
@@ -93,11 +132,11 @@ class TransactionHistoryScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  _FilterChip(title: 'All', isSelected: true),
-                  _FilterChip(title: 'Money In'),
-                  _FilterChip(title: 'Money Out'),
-                  _FilterChip(title: 'Transfers'),
-                  _FilterChip(title: 'Bills'),
+                  GestureDetector(onTap: () => setState(() => _filter = 'All'), child: _FilterChip(title: 'All', isSelected: _filter == 'All')),
+                  GestureDetector(onTap: () => setState(() => _filter = 'Money In'), child: _FilterChip(title: 'Money In', isSelected: _filter == 'Money In')),
+                  GestureDetector(onTap: () => setState(() => _filter = 'Money Out'), child: _FilterChip(title: 'Money Out', isSelected: _filter == 'Money Out')),
+                  GestureDetector(onTap: () => setState(() => _filter = 'Transfers'), child: _FilterChip(title: 'Transfers', isSelected: _filter == 'Transfers')),
+                  GestureDetector(onTap: () => setState(() => _filter = 'Bills'), child: _FilterChip(title: 'Bills', isSelected: _filter == 'Bills')),
                 ],
               ),
             ),
@@ -106,69 +145,45 @@ class TransactionHistoryScreen extends StatelessWidget {
 
             // Transactions List
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: [
-                  _MonthSection(month: 'August 2026', moneyIn: '₦ 150,000.00', moneyOut: '₦ 45,200.00'),
-                  _TransactionTile(
-                    title: 'John Doe',
-                    subtitle: 'Aug 28, 14:22 • Bank Transfer',
-                    amount: '+₦ 10,000.00',
-                    isCredit: true,
-                    status: 'Success',
-                    icon: Icons.arrow_downward_rounded,
-                  ),
-                  _TransactionTile(
-                    title: 'MTN Airtime',
-                    subtitle: 'Aug 27, 09:15 • Airtime',
-                    amount: '-₦ 2,000.00',
-                    isCredit: false,
-                    status: 'Success',
-                    icon: Icons.phone_android_rounded,
-                  ),
-                  _TransactionTile(
-                    title: 'Jane Smith',
-                    subtitle: 'Aug 25, 18:45 • Wazi Transfer',
-                    amount: '-₦ 15,000.00',
-                    isCredit: false,
-                    status: 'Failed',
-                    icon: Icons.arrow_upward_rounded,
-                    isFailed: true,
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  _MonthSection(month: 'July 2026', moneyIn: '₦ 450,000.00', moneyOut: '₦ 380,500.00'),
-                  _TransactionTile(
-                    title: 'Salary Deposit',
-                    subtitle: 'Jul 31, 08:00 • Bank Transfer',
-                    amount: '+₦ 400,000.00',
-                    isCredit: true,
-                    status: 'Success',
-                    icon: Icons.business_rounded,
-                  ),
-                  _TransactionTile(
-                    title: 'IKEDC Prepaid',
-                    subtitle: 'Jul 28, 11:30 • Electricity',
-                    amount: '-₦ 20,000.00',
-                    isCredit: false,
-                    status: 'Success',
-                    icon: Icons.lightbulb_outline_rounded,
-                  ),
-                  _TransactionTile(
-                    title: 'Supermarket POS',
-                    subtitle: 'Jul 25, 16:20 • Card Payment',
-                    amount: '-₦ 34,500.00',
-                    isCredit: false,
-                    status: 'Success',
-                    icon: Icons.credit_card_rounded,
-                  ),
-                ],
-              ),
+              child: _loading 
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null 
+                  ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+                  : _buildTransactionList(),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildTransactionList() {
+    final txs = _response?.transactions ?? [];
+    if (txs.isEmpty) {
+      return Center(
+        child: Text('No transactions found', style: WaziText.inter(size: 14, color: Colors.white54)),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: txs.length,
+      itemBuilder: (context, index) {
+        final tx = txs[index];
+        final isCredit = tx.direction == 'in';
+        IconData icon = isCredit ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
+        if (tx.category == 'airtime') icon = Icons.phone_android_rounded;
+        if (tx.category == 'electricity') icon = Icons.lightbulb_outline_rounded;
+        
+        return _TransactionTile(
+          title: tx.counterparty.isEmpty ? tx.description : tx.counterparty,
+          subtitle: '${tx.occurredAt.month}/${tx.occurredAt.day} • ${tx.category}',
+          amount: '${isCredit ? '+' : '-'}${tx.amountFormatted}',
+          isCredit: isCredit,
+          status: 'Success', // Mocked as the API doesn't return status yet
+          icon: icon,
+        );
+      },
     );
   }
 }

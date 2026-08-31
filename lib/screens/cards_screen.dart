@@ -4,18 +4,59 @@ import '../state/app_state.dart';
 import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
+import '../api/cards_api.dart';
 import '../widgets/bottom_nav.dart';
 
-class CardsScreen extends StatelessWidget {
+class CardsScreen extends StatefulWidget {
   const CardsScreen({super.key, required this.appState});
 
   final AppState appState;
 
   @override
+  State<CardsScreen> createState() => _CardsScreenState();
+}
+
+class _CardsScreenState extends State<CardsScreen> {
+  bool _loading = true;
+  String? _error;
+  List<CardOut> _cards = [];
+  List<CardTransactionOut> _transactions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final userId = widget.appState.userId;
+    if (userId == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
+      final cardsRes = await widget.appState.cardsApi.getCards(userId);
+      final txsRes = await widget.appState.cardsApi.getCardActivity(userId);
+      if (!mounted) return;
+      setState(() {
+        _cards = cardsRes.cards;
+        _transactions = txsRes.transactions;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Failed to load card data';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      bottomNavigationBar: WaziBottomNav(appState: appState),
+      bottomNavigationBar: WaziBottomNav(appState: widget.appState),
       body: SafeArea(
         child: Column(
           children: [
@@ -52,66 +93,66 @@ class CardsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 24),
                     
-                    // The Card
-                    Container(
-                      width: double.infinity,
-                      height: 220,
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF2A2D34), Color(0xFF141518)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('Wazi Premium', style: WaziText.grotesk(size: 18, color: Colors.white.withValues(alpha: 0.7), letterSpacing: 1)),
-                              Icon(Icons.contactless_outlined, color: Colors.white.withValues(alpha: 0.7)),
-                            ],
-                          ),
-                          Text('**** **** **** 4281', style: WaziText.grotesk(size: 24, weight: FontWeight.w500, color: Colors.white, letterSpacing: 2)),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Cardholder', style: WaziText.inter(size: 10, color: Colors.white.withValues(alpha: 0.5))),
-                                  const SizedBox(height: 4),
-                                  Text('JOHN DOE', style: WaziText.inter(size: 14, weight: FontWeight.w600, color: Colors.white, letterSpacing: 1)),
+                      _cards.isEmpty
+                          ? Center(child: Text('No cards found', style: WaziText.inter(size: 14, color: Colors.white54)))
+                          : Container(
+                              width: double.infinity,
+                              height: 220,
+                              padding: const EdgeInsets.all(24),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF2A2D34), Color(0xFF141518)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.5),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 10),
+                                  ),
                                 ],
                               ),
-                              Column(
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('Expires', style: WaziText.inter(size: 10, color: Colors.white.withValues(alpha: 0.5))),
-                                  const SizedBox(height: 4),
-                                  Text('12/28', style: WaziText.inter(size: 14, weight: FontWeight.w600, color: Colors.white, letterSpacing: 1)),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(_cards.first.name, style: WaziText.grotesk(size: 18, color: Colors.white.withValues(alpha: 0.7), letterSpacing: 1)),
+                                      Icon(Icons.contactless_outlined, color: Colors.white.withValues(alpha: 0.7)),
+                                    ],
+                                  ),
+                                  Text('**** **** **** ${_cards.first.last4}', style: WaziText.grotesk(size: 24, weight: FontWeight.w500, color: Colors.white, letterSpacing: 2)),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Cardholder', style: WaziText.inter(size: 10, color: Colors.white.withValues(alpha: 0.5))),
+                                          const SizedBox(height: 4),
+                                          Text(_cards.first.cardholder, style: WaziText.inter(size: 14, weight: FontWeight.w600, color: Colors.white, letterSpacing: 1)),
+                                        ],
+                                      ),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Expires', style: WaziText.inter(size: 10, color: Colors.white.withValues(alpha: 0.5))),
+                                          const SizedBox(height: 4),
+                                          Text(_cards.first.expires, style: WaziText.inter(size: 14, weight: FontWeight.w600, color: Colors.white, letterSpacing: 1)),
+                                        ],
+                                      ),
+                                      Text(_cards.first.brand, style: WaziText.grotesk(size: 24, weight: FontWeight.w800, color: Colors.white).copyWith(fontStyle: FontStyle.italic)),
+                                    ],
+                                  ),
                                 ],
                               ),
-                              // Visa Logo Placeholder
-                              Text('VISA', style: WaziText.grotesk(size: 24, weight: FontWeight.w800, color: Colors.white).copyWith(fontStyle: FontStyle.italic)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
+                            ),
                     const SizedBox(height: 32),
                     
                     // Action Buttons
@@ -129,9 +170,27 @@ class CardsScreen extends StatelessWidget {
                     // Card Activity
                     Text('Card Activity', style: WaziText.grotesk(size: 16, weight: FontWeight.w600, color: WaziColors.textAt(0.7))),
                     const SizedBox(height: 16),
-                    _buildTransaction(title: 'Netflix', date: 'Today, 10:24 AM', amount: '-\$15.99', icon: Icons.movie_outlined),
-                    _buildTransaction(title: 'Uber', date: 'Yesterday, 8:15 PM', amount: '-\$24.50', icon: Icons.local_taxi_outlined),
-                    _buildTransaction(title: 'Starbucks', date: 'Yesterday, 9:30 AM', amount: '-\$5.40', icon: Icons.coffee_outlined),
+                    if (_loading)
+                      const Center(child: CircularProgressIndicator())
+                    else if (_error != null)
+                      Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+                    else if (_transactions.isEmpty)
+                      Center(child: Text('No recent activity', style: WaziText.inter(size: 14, color: Colors.white54)))
+                    else
+                      ..._transactions.map((tx) {
+                        IconData icon;
+                        if (tx.icon == 'movie_outlined') icon = Icons.movie_outlined;
+                        else if (tx.icon == 'local_taxi_outlined') icon = Icons.local_taxi_outlined;
+                        else if (tx.icon == 'coffee_outlined') icon = Icons.coffee_outlined;
+                        else icon = Icons.receipt_long_outlined;
+                        
+                        return _buildTransaction(
+                          title: tx.title,
+                          date: tx.date,
+                          amount: tx.amount,
+                          icon: icon,
+                        );
+                      }),
                     const SizedBox(height: 32),
                   ],
                 ),

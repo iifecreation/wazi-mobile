@@ -4,18 +4,56 @@ import '../state/app_state.dart';
 import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
+import '../api/finance_api.dart';
 import '../widgets/bottom_nav.dart';
 
-class FinanceScreen extends StatelessWidget {
+class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key, required this.appState});
 
   final AppState appState;
 
   @override
+  State<FinanceScreen> createState() => _FinanceScreenState();
+}
+
+class _FinanceScreenState extends State<FinanceScreen> {
+  bool _loading = true;
+  String? _error;
+  FinanceResponse? _data;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final userId = widget.appState.userId;
+    if (userId == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
+      final res = await widget.appState.financeApi.getFinance(userId);
+      if (!mounted) return;
+      setState(() {
+        _data = res;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Failed to load finance data';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      bottomNavigationBar: WaziBottomNav(appState: appState),
+      bottomNavigationBar: WaziBottomNav(appState: widget.appState),
       body: SafeArea(
         child: Column(
           children: [
@@ -48,35 +86,47 @@ class FinanceScreen extends StatelessWidget {
                     // Monthly Summary
                     Text('Monthly Summary', style: WaziText.grotesk(size: 16, weight: FontWeight.w600, color: WaziColors.textAt(0.7))),
                     const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        _buildSummaryCard(title: 'Income', amount: '\$4,250.00', icon: Icons.arrow_downward_rounded, color: WaziColors.teal),
-                        const SizedBox(width: 16),
-                        _buildSummaryCard(title: 'Spent', amount: '\$2,140.50', icon: Icons.arrow_upward_rounded, color: Colors.redAccent),
-                      ],
-                    ),
-                    const SizedBox(height: 32),
-                    
-                    // Top Categories
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Top Categories', style: WaziText.grotesk(size: 16, weight: FontWeight.w600, color: WaziColors.textAt(0.7))),
-                        Text('See All', style: WaziText.inter(size: 12, weight: FontWeight.w500, color: WaziColors.gold)),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildCategoryRow(title: 'Food & Dining', amount: '\$450.00', percent: 0.7, color: Colors.orange),
-                    _buildCategoryRow(title: 'Transportation', amount: '\$230.00', percent: 0.4, color: Colors.blue),
-                    _buildCategoryRow(title: 'Shopping', amount: '\$150.00', percent: 0.25, color: Colors.purple),
-                    const SizedBox(height: 32),
-                    
-                    // Goals
-                    Text('Savings Goals', style: WaziText.grotesk(size: 16, weight: FontWeight.w600, color: WaziColors.textAt(0.7))),
-                    const SizedBox(height: 16),
-                    _buildGoalCard(title: 'New Car', current: '\$5,000', target: '\$20,000', progress: 0.25),
-                    const SizedBox(height: 12),
-                    _buildGoalCard(title: 'Vacation', current: '\$1,200', target: '\$3,000', progress: 0.4),
+                    if (_loading)
+                      const Center(child: CircularProgressIndicator())
+                    else if (_error != null)
+                      Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+                    else if (_data != null) ...[
+                      Row(
+                        children: [
+                          _buildSummaryCard(title: 'Income', amount: _data!.income, icon: Icons.arrow_downward_rounded, color: WaziColors.teal),
+                          const SizedBox(width: 16),
+                          _buildSummaryCard(title: 'Spent', amount: _data!.spent, icon: Icons.arrow_upward_rounded, color: Colors.redAccent),
+                        ],
+                      ),
+                      const SizedBox(height: 32),
+                      
+                      // Top Categories
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Top Categories', style: WaziText.grotesk(size: 16, weight: FontWeight.w600, color: WaziColors.textAt(0.7))),
+                          Text('See All', style: WaziText.inter(size: 12, weight: FontWeight.w500, color: WaziColors.gold)),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      ..._data!.categories.map((c) {
+                        Color color;
+                        if (c.color == 'orange') color = Colors.orange;
+                        else if (c.color == 'blue') color = Colors.blue;
+                        else if (c.color == 'purple') color = Colors.purple;
+                        else color = Colors.green;
+                        return _buildCategoryRow(title: c.title, amount: c.amount, percent: c.percent, color: color);
+                      }),
+                      const SizedBox(height: 32),
+                      
+                      // Goals
+                      Text('Savings Goals', style: WaziText.grotesk(size: 16, weight: FontWeight.w600, color: WaziColors.textAt(0.7))),
+                      const SizedBox(height: 16),
+                      ..._data!.goals.map((g) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _buildGoalCard(title: g.title, current: g.current, target: g.target, progress: g.progress),
+                      )),
+                    ],
                     const SizedBox(height: 32),
                   ],
                 ),

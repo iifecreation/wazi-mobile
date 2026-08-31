@@ -64,4 +64,21 @@ class ApiClient {
     );
     return _decode(response);
   }
+
+  /// multipart/form-data POST — currently only used to upload a recorded
+  /// audio clip to POST /voice/transcribe (see TranscriptionApi).
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required String fileFieldName,
+    required List<int> fileBytes,
+    required String fileName,
+    Map<String, String> fields = const {},
+  }) async {
+    final request = http.MultipartRequest('POST', _uri(path))
+      ..fields.addAll(fields)
+      ..files.add(http.MultipartFile.fromBytes(fileFieldName, fileBytes, filename: fileName));
+    final streamed = await _http.send(request);
+    final response = await http.Response.fromStream(streamed);
+    return _decode(response);
+  }
 }

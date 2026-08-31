@@ -5,38 +5,49 @@ import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
 
-// Mock data for notifications
-final List<Map<String, dynamic>> _mockNotifications = [
-  {
-    'id': '1',
-    'title': 'Transfer Successful',
-    'body': 'Your transfer of ₦15,000 to John Doe was successful.',
-    'time': '2m ago',
-    'type': 'transfer',
-    'unread': true,
-  },
-  {
-    'id': '2',
-    'title': 'Security Alert',
-    'body': 'A new device (iPhone 14) logged into your account.',
-    'time': '1h ago',
-    'type': 'security',
-    'unread': true,
-  },
-  {
-    'id': '3',
-    'title': 'System Update',
-    'body': 'Wazi will undergo scheduled maintenance tonight at 2 AM.',
-    'time': 'Yesterday',
-    'type': 'system',
-    'unread': false,
-  },
-];
+import '../api/notifications_api.dart';
 
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key, required this.appState});
 
   final AppState appState;
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  bool _loading = true;
+  String? _error;
+  List<NotificationOut> _notifications = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifs();
+  }
+
+  Future<void> _loadNotifs() async {
+    final userId = widget.appState.userId;
+    if (userId == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
+      final res = await widget.appState.notificationsApi.getNotifications(userId);
+      if (!mounted) return;
+      setState(() {
+        _notifications = res.notifications;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load notifications';
+        _loading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +61,7 @@ class NotificationsScreen extends StatelessWidget {
             child: Row(
               children: [
                 IconButton(
-                  onPressed: () => appState.go(AppScreen.dashboard),
+                  onPressed: () => widget.appState.go(AppScreen.dashboard),
                   icon: const Icon(Icons.arrow_back, color: Colors.white54),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -63,18 +74,34 @@ class NotificationsScreen extends StatelessWidget {
           
           // List
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              itemCount: _mockNotifications.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 16),
-              itemBuilder: (context, index) {
-                final notif = _mockNotifications[index];
-                return _NotificationCard(
-                  notif: notif,
-                  onTap: () => appState.openNotificationDetails(notif),
-                );
-              },
-            ),
+            child: _loading 
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+                : _notifications.isEmpty
+                  ? Center(child: Text('No notifications', style: WaziText.inter(size: 14, color: Colors.white54)))
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                      itemCount: _notifications.length,
+                      separatorBuilder: (context, index) => const SizedBox(height: 16),
+                      itemBuilder: (context, index) {
+                        final notif = _notifications[index];
+                        return _NotificationCard(
+                          notif: notif,
+                          onTap: () {
+                             // openNotificationDetails expects a Map for now, or we update it. Let's pass a mock map for backwards compatibility.
+                             widget.appState.openNotificationDetails({
+                               'id': notif.id,
+                               'title': notif.title,
+                               'body': notif.body,
+                               'time': notif.time,
+                               'type': notif.type,
+                               'unread': notif.unread,
+                             });
+                          },
+                        );
+                      },
+                    ),
           ),
         ],
       ),
@@ -85,13 +112,13 @@ class NotificationsScreen extends StatelessWidget {
 class _NotificationCard extends StatelessWidget {
   const _NotificationCard({required this.notif, required this.onTap});
 
-  final Map<String, dynamic> notif;
+  final NotificationOut notif;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final bool unread = notif['unread'] == true;
-    final String type = notif['type'] as String;
+    final bool unread = notif.unread;
+    final String type = notif.type;
     
     IconData icon;
     Color iconColor;
@@ -136,19 +163,19 @@ class _NotificationCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          notif['title'],
+                          notif.title,
                           style: WaziText.inter(size: 15, weight: unread ? FontWeight.w600 : FontWeight.w500, color: Colors.white),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(notif['time'], style: WaziText.inter(size: 12, color: WaziColors.textAt(0.5))),
+                      Text(notif.time, style: WaziText.inter(size: 12, color: WaziColors.textAt(0.5))),
                     ],
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    notif['body'],
+                    notif.body,
                     style: WaziText.inter(size: 14, color: unread ? WaziColors.textAt(0.8) : WaziColors.textAt(0.5)),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,

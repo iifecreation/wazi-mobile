@@ -66,15 +66,20 @@ class VoiceOnboardingResponse {
     required this.replyText,
     required this.sessionId,
     this.clientAction,
+    this.userId,
   });
 
   final String replyText;
   final String sessionId;
   final String? clientAction;
+  // Set as soon as the draft account exists (right after phone
+  // verification) — this channel has no other way to learn its user_id.
+  final String? userId;
 
   factory VoiceOnboardingResponse.fromJson(Map<String, dynamic> json) => VoiceOnboardingResponse(
     replyText: json['reply_text'] as String,
     sessionId: json['session_id'] as String,
     clientAction: json['client_action'] as String?,
+    userId: json['user_id'] as String?,
   );
 }

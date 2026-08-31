@@ -43,6 +43,16 @@ dependencies:
   shared_preferences: ^2.3.3
   flutter_tts: ^4.2.5
   speech_to_text: ^7.4.0
+  # Raw audio capture in parallel with speech_to_text's on-device
+  # recognition — the on-device engine's own endpoint detection (when to
+  # stop) is reused as-is; this just also records the same turn so it can
+  # be uploaded to Wazi-server's Google Cloud Speech-to-Text bridge for a
+  # noisy-environment-capable transcript when that's configured. See
+  # AppState._recorder / lib/api/transcription_api.dart.
+  record: ^7.1.1
+  # A writable temp directory for the .wav file `record` captures, on the
+  # way to being uploaded for cloud transcription.
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:

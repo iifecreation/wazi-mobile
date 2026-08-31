@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -12,7 +15,13 @@ import '../api/api_client.dart';
 import '../api/payments_api.dart';
 import '../api/registration_api.dart';
 import '../api/requests_api.dart';
+import '../api/notifications_api.dart';
+import '../api/cards_api.dart';
+import '../api/finance_api.dart';
+import '../api/savings_api.dart';
+import '../api/bills_api.dart';
 import '../api/security_api.dart';
+import '../api/transcription_api.dart';
 import '../api/voice_api.dart';
 import 'models.dart';
 
@@ -64,7 +73,36 @@ class AppState extends ChangeNotifier {
   late final PaymentsApi paymentsApi = PaymentsApi(_apiClient);
   late final SecurityApi securityApi = SecurityApi(_apiClient);
   late final RequestsApi requestsApi = RequestsApi(_apiClient);
+  late final NotificationsApi notificationsApi = NotificationsApi(_apiClient);
+  late final CardsApi cardsApi = CardsApi(_apiClient);
+  late final FinanceApi financeApi = FinanceApi(_apiClient);
+  late final SavingsApi savingsApi = SavingsApi(_apiClient);
+  late final BillsApi billsApi = BillsApi(_apiClient);
+  late final TranscriptionApi transcriptionApi = TranscriptionApi(_apiClient);
   final FlutterTts _tts = FlutterTts();
+  final AudioRecorder _recorder = AudioRecorder();
+  // Flips true the first time the server reports no transcription
+  // provider is configured (503) — that isn't going to change
+  // mid-session, so this stops adding a doomed upload attempt (and its
+  // latency) to every remaining turn. Recognition still works via the
+  // on-device fallback.
+  bool _cloudTranscriptionUnavailable = false;
+  // iOS (and most Android configurations) won't let two separate
+  // microphone sessions run at once — `record`'s own capture and
+  // speech_to_text's live recognition fighting over the mic is exactly
+  // what silently produced zero-length recordings when this app tried to
+  // run both in parallel. So there's exactly one owner of the mic at a
+  // time: the recorder (primary, feeds cloud/Whisper transcription) or
+  // speech_to_text (fallback, only when the recorder can't be used or
+  // cloud transcription fails outright).
+  StreamSubscription<Amplitude>? _ampSub;
+  DateTime? _speechDetectedAt;
+  DateTime? _lastLoudAt;
+  Timer? _maxDurationTimer;
+  bool _usingOnDeviceFallback = false;
+  static const _silenceThresholdDb = -35.0;
+  static const _silenceStopAfter = Duration(seconds: 3);
+  static const _maxRecordingDuration = Duration(seconds: 25);
 
   /// Client-generated conversation id for /voice/query — the dialogue
   /// ASR session would.
@@ -79,6 +117,12 @@ class AppState extends ChangeNotifier {
   String _sttWords = '';
   final SpeechToText _stt = SpeechToText();
   bool _sttInitialized = false;
+  // Preferred locale for recognition, resolved once at startup (see
+  // _initStt) — a Nigerian English locale if the device offers one,
+  // otherwise null (device default). Passing the *wrong* locale to a
+  // correctly-working recognizer is a common, easy-to-miss cause of
+  // "it doesn't understand me even though I'm speaking clearly".
+  String? _preferredLocaleId;
 
   final List<ChatTurn> turns = [];
   final List<ChatTurn> onboardingTurns = [];
@@ -126,6 +170,9 @@ class AppState extends ChangeNotifier {
     for (final t in _timers) {
       t.cancel();
     }
+    _ampSub?.cancel();
+    _maxDurationTimer?.cancel();
+    _recorder.dispose();
     super.dispose();
   }
 
@@ -148,30 +195,44 @@ class AppState extends ChangeNotifier {
         notifyListeners();
       },
       onStatus: (val) {
-        if (val == 'done' || val == 'notListening') {
-          if (listening) {
-            listening = false;
-            soundLevel = 0.0;
-            notifyListeners();
-            if (_sttWords.isNotEmpty) {
-              final words = _sttWords;
-              _sttWords = '';
-              if (screen == AppScreen.voiceWelcome) {
-                runOnboardingTranscript(words);
-              } else if (screen == AppScreen.home) {
-                _runTranscript(words);
-              }
-            }
-          }
+        // Only the on-device fallback path uses _stt.listen() now — the
+        // primary path (see startListening) records via `record` instead,
+        // since iOS won't run both microphone sessions at once.
+        if ((val == 'done' || val == 'notListening') && listening && _usingOnDeviceFallback) {
+          listening = false;
+          soundLevel = 0.0;
+          notifyListeners();
+          final words = _sttWords;
+          _sttWords = '';
+          if (words.isNotEmpty) _dispatchTranscript(words);
         }
       },
     );
 
+    if (_sttInitialized) {
+      try {
+        final locales = await _stt.locales();
+        final nigerian = locales.where((l) => l.localeId.toLowerCase().contains('ng')).toList();
+        if (nigerian.isNotEmpty) {
+          _preferredLocaleId = nigerian.first.localeId;
+        }
+      } catch (_) {
+        // Non-fatal — falls back to the device's default locale.
+      }
+    }
+
     _tts.setCompletionHandler(() {
       isSpeaking = false;
       notifyListeners();
-      // Auto-start listening after AI speaks on the voice onboarding screen
-      if (screen == AppScreen.voiceWelcome) {
+      // Auto-relisten after Wazi finishes speaking, on both the voice
+      // onboarding screen and the logged-in voice screen (same
+      // VoiceScreen widget, see app_root.dart) — this is what makes a
+      // voice conversation actually flow: onboarding, "what's my
+      // balance", "send 2000 to Tunde", airtime, all keep listening for
+      // the next thing to say without a manual tap every turn. A manual
+      // tap (toggleListening, wired to the mic button) still works at any
+      // point, including to interrupt.
+      if (screen == AppScreen.voiceWelcome || screen == AppScreen.home) {
         startListening();
       }
     });
@@ -180,6 +241,8 @@ class AppState extends ChangeNotifier {
       isSpeaking = true;
       notifyListeners();
     });
+
+    await _applyTtsLanguage();
   }
 
   Future<void> _restoreSession() async {
@@ -358,7 +421,14 @@ class AppState extends ChangeNotifier {
     try {
       final response = await voiceApi.onboarding(sessionId: sessionId, transcript: transcript);
       processing = false;
-      
+
+      // The channel's only way to learn its user_id — set as soon as the
+      // draft account exists (right after phone verification), long
+      // before the flow completes.
+      if (response.userId != null) {
+        userId = response.userId;
+      }
+
       // Add AI's reply
       onboardingTurns.add(ChatTurn(role: ChatRole.ai, text: response.replyText, speaking: speak));
       if (speak) {
@@ -367,7 +437,7 @@ class AppState extends ChangeNotifier {
         _tts.speak(response.replyText);
       }
       notifyListeners();
-      
+
       if (response.clientAction == 'open_camera') {
         // Mock opening camera and scanning document
         _later(() {
@@ -379,17 +449,27 @@ class AppState extends ChangeNotifier {
       } else if (response.clientAction == 'open_nin_modal') {
         sheet = SheetType.nin_input;
         notifyListeners();
+      } else if (response.clientAction == 'open_password_modal') {
+        sheet = SheetType.password_input;
+        notifyListeners();
+      } else if (response.clientAction == 'open_pin_modal') {
+        sheet = SheetType.transaction_pin_input;
+        notifyListeners();
       } else if (response.clientAction == 'onboarding_complete') {
+        if (userId != null) {
+          await _persistUserId(userId!);
+          await refreshBalance();
+        }
         // Give time for the user to hear the final message before navigating away
         _later(() {
-          go(AppScreen.home);
+          go(AppScreen.dashboard);
         }, const Duration(seconds: 2));
       } else if (response.clientAction == 'fallback_to_traditional') {
         _later(() {
           go(AppScreen.auth);
         }, const Duration(seconds: 2));
       }
-      
+
     } on ApiException catch (e) {
       processing = false;
       error = e.detail;
@@ -415,13 +495,152 @@ class AppState extends ChangeNotifier {
     runOnboardingTranscript("Here is my NIN: $typedNin");
   }
 
+  /// Login password — typed via modal, never spoken, same reasoning as
+  /// BVN/NIN above. See app/dialogue/onboarding.py's module docstring.
+  void submitOnboardingPassword(String typedPassword) {
+    sheet = null;
+    notifyListeners();
+    runOnboardingTranscript("Here is my password: $typedPassword");
+  }
+
+  /// Transaction PIN — the credential that actually authorizes payments
+  /// (separate from the login password above). Typed via modal, never
+  /// spoken, same reasoning as everywhere else money-adjacent in this app.
+  void submitOnboardingTransactionPin(String typedPin) {
+    sheet = null;
+    notifyListeners();
+    runOnboardingTranscript("Here is my PIN: $typedPin");
+  }
+
+  void _dispatchTranscript(String words) {
+    if (screen == AppScreen.voiceWelcome) {
+      runOnboardingTranscript(words);
+    } else if (screen == AppScreen.home) {
+      _runTranscript(words);
+    }
+  }
+
+  /// Entry point for a listening turn — tries the recorder-backed path
+  /// first (cloud/Whisper transcription, generally more accurate and the
+  /// only path that understands Nigerian-accented English well), and
+  /// falls back to on-device recognition only if the recorder itself
+  /// can't start. The two never run at once (see the field comments above
+  /// on why).
   void startListening() async {
     if (!_sttInitialized) return;
+    listening = true;
+    soundLevel = 0.0;
+    _usingOnDeviceFallback = false;
+    notifyListeners();
+
+    final started = await _startRecordingCapture();
+    if (!started) {
+      await _startOnDeviceListening();
+    }
+  }
+
+  Future<bool> _startRecordingCapture() async {
+    try {
+      if (!await _recorder.hasPermission()) return false;
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/wazi_turn_${DateTime.now().millisecondsSinceEpoch}.wav';
+      await _recorder.start(const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000, numChannels: 1), path: path);
+
+      _speechDetectedAt = null;
+      _lastLoudAt = null;
+      _ampSub?.cancel();
+      _ampSub = _recorder.onAmplitudeChanged(const Duration(milliseconds: 200)).listen((amp) {
+        soundLevel = amp.current;
+        notifyListeners();
+        final now = DateTime.now();
+        if (amp.current > _silenceThresholdDb) {
+          _speechDetectedAt ??= now;
+          _lastLoudAt = now;
+        } else if (_speechDetectedAt != null && _lastLoudAt != null && now.difference(_lastLoudAt!) >= _silenceStopAfter) {
+          _endRecordingCapture();
+        }
+      });
+
+      _maxDurationTimer?.cancel();
+      _maxDurationTimer = Timer(_maxRecordingDuration, _endRecordingCapture);
+      return true;
+    } catch (_) {
+      // No mic permission for `record`, or the platform recorder failed
+      // to start — the on-device fallback still carries this turn.
+      return false;
+    }
+  }
+
+  void _endRecordingCapture() {
+    if (!listening || _usingOnDeviceFallback) return; // already handled
+    _ampSub?.cancel();
+    _ampSub = null;
+    _maxDurationTimer?.cancel();
+    _maxDurationTimer = null;
+    listening = false;
+    soundLevel = 0.0;
+    notifyListeners();
+    _finishRecordingCapture();
+  }
+
+  Future<void> _finishRecordingCapture() async {
+    String? path;
+    try {
+      path = await _recorder.stop();
+    } catch (_) {
+      // Nothing to upload — go straight to the fallback.
+    }
+    if (path == null) {
+      await _startOnDeviceListening();
+      return;
+    }
+
+    final file = File(path);
+    try {
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty || _cloudTranscriptionUnavailable) {
+        await _startOnDeviceListening();
+        return;
+      }
+      final transcript = await transcriptionApi
+          .transcribe(bytes, languageCode: _langLocaleCodes[lang] ?? 'en-NG')
+          .timeout(const Duration(seconds: 15));
+      final words = transcript.trim();
+      if (words.isEmpty) {
+        await _startOnDeviceListening();
+        return;
+      }
+      _dispatchTranscript(words);
+    } on ApiException catch (e) {
+      // 503 = server has no transcription provider configured — stop
+      // trying for the rest of this session. Any other status (bad
+      // audio, provider hiccup) just falls back for this turn.
+      if (e.statusCode == 503) _cloudTranscriptionUnavailable = true;
+      await _startOnDeviceListening();
+    } catch (_) {
+      // Network error / timeout.
+      await _startOnDeviceListening();
+    } finally {
+      unawaited(file.delete().catchError((_) => file));
+    }
+  }
+
+  /// Fallback path — the phone's built-in recognizer, live-listening the
+  /// same way this app always used to. Only reached when the recorder
+  /// can't start at all, or cloud transcription fails outright for a turn
+  /// that was already recorded.
+  Future<void> _startOnDeviceListening() async {
+    if (!_sttInitialized) {
+      listening = false;
+      notifyListeners();
+      return;
+    }
+    _usingOnDeviceFallback = true;
     _sttWords = '';
     listening = true;
     soundLevel = 0.0;
     notifyListeners();
-    
+
     await _stt.listen(
       onResult: (SpeechRecognitionResult result) {
         _sttWords = result.recognizedWords;
@@ -431,17 +650,47 @@ class AppState extends ChangeNotifier {
         notifyListeners();
       },
       listenOptions: SpeechListenOptions(
-        listenFor: const Duration(seconds: 15),
-        pauseFor: const Duration(milliseconds: 1500),
+        // `dictation` (built for full natural sentences, like the
+        // keyboard's dictation button) instead of the default
+        // `confirmation` mode (tuned for short yes/no-style utterances) —
+        // confirmation mode was very likely the real cause of getting cut
+        // off mid-sentence, not the pause timing.
+        listenMode: ListenMode.dictation,
+        // 1.5s was too tight — a normal pause mid-sentence (thinking of
+        // the next word, a slower/deliberate speaking pace) reads as
+        // "done talking" and cuts the user off. 3s gives real breathing
+        // room without making every turn feel like it hangs forever.
+        pauseFor: const Duration(seconds: 3),
+        listenFor: const Duration(seconds: 30),
+        partialResults: true,
+        cancelOnError: false,
+        localeId: _preferredLocaleId,
       ),
     );
   }
 
   void stopListening() async {
-    await _stt.stop();
-    listening = false;
-    soundLevel = 0.0;
-    notifyListeners();
+    if (_usingOnDeviceFallback) {
+      await _stt.stop();
+    } else {
+      _endRecordingCapture();
+    }
+  }
+
+  /// The mic button's onTap — the manual fallback to the auto-relisten
+  /// loop above. Stops a listening turn early if already listening,
+  /// otherwise starts one. Also usable to interrupt Wazi mid-sentence:
+  /// stopping TTS first so it doesn't keep talking over the user.
+  void toggleListening() {
+    if (isSpeaking) {
+      _tts.stop();
+      isSpeaking = false;
+    }
+    if (listening) {
+      stopListening();
+    } else {
+      startListening();
+    }
   }
 
   void toOnboarding() {
@@ -742,9 +991,92 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Best-effort locale codes for each language Settings offers. Real
+  // constraint worth being upfront about: which of these actually speak
+  // out loud depends on what voice packs are installed on the device —
+  // Apple/Android don't ship on-device TTS voices for Yoruba, Igbo, Hausa,
+  // or Nigerian Pidgin at all as of this writing, only for a handful of
+  // major world languages. `_applyTtsLanguage` checks availability first
+  // and falls back to English rather than silently saying nothing (or
+  // speaking in the wrong language) when a voice isn't on the device.
+  static const _langLocaleCodes = {
+    'English': 'en-NG',
+    'Pidgin': 'en-NG', // no distinct TTS locale for Nigerian Pidgin exists
+    'Yoruba': 'yo-NG',
+    'Igbo': 'ig-NG',
+    'Hausa': 'ha-NG',
+    'Swahili': 'sw-KE',
+    'French': 'fr-FR',
+  };
+
+  Future<void> _applyTtsLanguage() async {
+    final code = _langLocaleCodes[lang] ?? 'en-US';
+    var resolvedCode = 'en-US';
+    try {
+      final available = await _tts.isLanguageAvailable(code);
+      resolvedCode = available == true ? code : 'en-US';
+      await _tts.setLanguage(resolvedCode);
+    } catch (_) {
+      // Non-fatal — keep whatever language the engine already has set.
+    }
+    await _applyBestVoice(resolvedCode);
+    try {
+      // A touch slower than the engine default, at a natural (not
+      // artificially raised/lowered) pitch — the default rate on iOS in
+      // particular reads as rushed/flat, which is a real part of what
+      // makes a voice sound obviously synthetic.
+      await _tts.setPitch(1.0);
+      await _tts.setSpeechRate(0.46);
+    } catch (_) {
+      // Non-fatal.
+    }
+  }
+
+  /// Picks the most natural-sounding installed voice for a locale. iOS
+  /// ships each language in multiple quality tiers — "default" (the
+  /// older, noticeably synthetic-sounding compact voices), "enhanced",
+  /// and "premium" (Apple's neural voices, genuinely close to a human
+  /// speaker) — but only the "default" tier is pre-installed; enhanced/
+  /// premium voices have to be downloaded once by the *user*, in
+  /// Settings -> Accessibility -> Spoken Content -> Voices -> (language)
+  /// -> pick a voice tagged "Enhanced" or "Premium". This just makes sure
+  /// the app actually uses the best one already on the device instead of
+  /// defaulting to the compact voice — it can't download one itself.
+  Future<void> _applyBestVoice(String localeCode) async {
+    try {
+      final raw = await _tts.getVoices;
+      if (raw is! List) return;
+      final languagePrefix = localeCode.split('-').first.toLowerCase();
+      final matches = raw
+          .whereType<Object>()
+          .map((v) => Map<String, dynamic>.from(v as Map))
+          .where((v) => (v['locale'] as String? ?? '').toLowerCase().startsWith(languagePrefix))
+          .toList();
+      if (matches.isEmpty) return;
+
+      const qualityRank = {'premium': 0, 'enhanced': 1, 'default': 2};
+      matches.sort((a, b) {
+        final qa = qualityRank[(a['quality'] as String? ?? 'default').toLowerCase()] ?? 3;
+        final qb = qualityRank[(b['quality'] as String? ?? 'default').toLowerCase()] ?? 3;
+        return qa.compareTo(qb);
+      });
+
+      final best = matches.first;
+      await _tts.setVoice({
+        'name': best['name'] as String? ?? '',
+        'locale': best['locale'] as String? ?? localeCode,
+        if (best['identifier'] is String) 'identifier': best['identifier'] as String,
+      });
+    } catch (_) {
+      // Non-fatal — falls back to whatever voice the engine already had
+      // selected for this language.
+    }
+  }
+
   void pickLang(String name) {
     lang = name;
     notifyListeners();
+    _applyTtsLanguage();
   }
 
   // --- sheets --------------------------------------------------------------
@@ -956,6 +1288,17 @@ class AppState extends ChangeNotifier {
   /// POST /voice/query, push whatever Wazi-server actually says back.
   Future<void> _runTranscript(String transcript) async {
     if (userId == null) return;
+    if (transcript.trim().isEmpty) {
+      // The screen's own kick-off call (see voice_screen.dart's initState)
+      // — a real greeting belongs here, not "Sorry, I didn't catch that"
+      // (which is what the server's rule-based parser would say to an
+      // empty transcript, since no keyword rule matches nothing). No
+      // network round trip needed for a canned greeting.
+      if (turns.isEmpty) {
+        _push(ChatRole.ai, "Hi, I'm listening. Ask for a balance, send money, buy airtime — whatever you need.", speaking: speak);
+      }
+      return;
+    }
     processing = true;
     if (screen != AppScreen.insights) screen = AppScreen.home;
     sheet = null;

@@ -53,7 +53,7 @@ enum AppScreen {
   deviceManagement,
 }
 
-enum SheetType { confirm, pin, privacy, success, support, bvn_input, nin_input }
+enum SheetType { confirm, pin, privacy, success, support, bvn_input, nin_input, password_input, transaction_pin_input }
 
 enum ChatRole { user, ai }
 
