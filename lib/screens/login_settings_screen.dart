@@ -3,6 +3,7 @@ import '../state/app_state.dart';
 import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
+import '../widgets/credential_change_dialog.dart';
 
 class LoginSettingsScreen extends StatefulWidget {
   const LoginSettingsScreen({super.key, required this.appState});
@@ -73,13 +74,27 @@ class _LoginSettingsScreenState extends State<LoginSettingsScreen> {
                             icon: Icons.phone_android_rounded,
                             title: 'Change Phone Number',
                             subtitle: 'Current: +234 801 **** 5678',
-                            onTap: () {},
+                            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Changing your phone number isn't available in this demo yet.")),
+                            ),
                           ),
                           _LoginActionRow(
                             icon: Icons.password_rounded,
                             title: 'Change Login Password',
                             isLast: true,
-                            onTap: () {},
+                            onTap: () {
+                              final userId = widget.appState.userId;
+                              if (userId == null) return;
+                              showChangeCredentialDialog(
+                                context,
+                                title: 'password',
+                                oldHint: 'Current password',
+                                newHint: 'New password',
+                                isPin: false,
+                                onSubmit: (oldValue, newValue) =>
+                                    widget.appState.registrationApi.changePassword(userId, oldValue, newValue),
+                              );
+                            },
                           ),
                         ],
                       ),

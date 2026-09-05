@@ -1,78 +1,67 @@
 import 'api_client.dart';
 
+/// Mirrors app/finance/schemas.py::FinanceCategoryOut — this month's real
+/// spend breakdown (same categorizer as Insights' spend-summary).
 class FinanceCategoryOut {
+  FinanceCategoryOut({required this.title, required this.amountFormatted, required this.percent});
+
   final String title;
-  final String amount;
+  final String amountFormatted;
   final double percent;
-  final String color;
 
-  FinanceCategoryOut({
-    required this.title,
-    required this.amount,
-    required this.percent,
-    required this.color,
-  });
-
-  factory FinanceCategoryOut.fromJson(Map<String, dynamic> json) {
-    return FinanceCategoryOut(
-      title: json['title'] as String,
-      amount: json['amount'] as String,
-      percent: (json['percent'] as num).toDouble(),
-      color: json['color'] as String,
-    );
-  }
+  factory FinanceCategoryOut.fromJson(Map<String, dynamic> json) => FinanceCategoryOut(
+    title: json['title'] as String,
+    amountFormatted: json['amount_formatted'] as String,
+    percent: (json['percent'] as num).toDouble(),
+  );
 }
 
+/// Mirrors app/finance/schemas.py::FinanceGoalOut — real savings goals
+/// (app/savings/), not a separate fake goal list.
 class FinanceGoalOut {
-  final String title;
-  final String current;
-  final String target;
-  final double progress;
-
   FinanceGoalOut({
+    required this.goalId,
     required this.title,
-    required this.current,
-    required this.target,
+    required this.currentFormatted,
+    required this.targetFormatted,
     required this.progress,
   });
 
-  factory FinanceGoalOut.fromJson(Map<String, dynamic> json) {
-    return FinanceGoalOut(
-      title: json['title'] as String,
-      current: json['current'] as String,
-      target: json['target'] as String,
-      progress: (json['progress'] as num).toDouble(),
-    );
-  }
+  final String goalId;
+  final String title;
+  final String currentFormatted;
+  final String? targetFormatted;
+  final double? progress;
+
+  factory FinanceGoalOut.fromJson(Map<String, dynamic> json) => FinanceGoalOut(
+    goalId: json['goal_id'] as String,
+    title: json['title'] as String,
+    currentFormatted: json['current_formatted'] as String,
+    targetFormatted: json['target_formatted'] as String?,
+    progress: (json['progress'] as num?)?.toDouble(),
+  );
 }
 
+/// Mirrors app/finance/schemas.py::FinanceResponse.
 class FinanceResponse {
-  final String income;
-  final String spent;
+  FinanceResponse({required this.incomeFormatted, required this.spentFormatted, required this.categories, required this.goals});
+
+  final String incomeFormatted;
+  final String spentFormatted;
   final List<FinanceCategoryOut> categories;
   final List<FinanceGoalOut> goals;
 
-  FinanceResponse({
-    required this.income,
-    required this.spent,
-    required this.categories,
-    required this.goals,
-  });
-
-  factory FinanceResponse.fromJson(Map<String, dynamic> json) {
-    return FinanceResponse(
-      income: json['income'] as String,
-      spent: json['spent'] as String,
-      categories: (json['categories'] as List).map((i) => FinanceCategoryOut.fromJson(i as Map<String, dynamic>)).toList(),
-      goals: (json['goals'] as List).map((i) => FinanceGoalOut.fromJson(i as Map<String, dynamic>)).toList(),
-    );
-  }
+  factory FinanceResponse.fromJson(Map<String, dynamic> json) => FinanceResponse(
+    incomeFormatted: json['income_formatted'] as String,
+    spentFormatted: json['spent_formatted'] as String,
+    categories: (json['categories'] as List).map((i) => FinanceCategoryOut.fromJson(i as Map<String, dynamic>)).toList(),
+    goals: (json['goals'] as List).map((i) => FinanceGoalOut.fromJson(i as Map<String, dynamic>)).toList(),
+  );
 }
 
 class FinanceApi {
-  final ApiClient _client;
-
   FinanceApi(this._client);
+  final ApiClient _client;
 
   Future<FinanceResponse> getFinance(String userId) async {
     final json = await _client.get('/finance/$userId');

@@ -1,61 +1,89 @@
 import 'api_client.dart';
 
+/// Mirrors app/savings/schemas.py::SavingsGoalOut. Real per-user state —
+/// deposits/withdrawals move real money against the main Naira account.
 class SavingsGoalOut {
-  final String title;
-  final String current;
-  final String target;
-  final double progress;
-  final String color;
-  final String icon;
-
   SavingsGoalOut({
+    required this.goalId,
     required this.title,
-    required this.current,
-    required this.target,
+    required this.savedMinor,
+    required this.savedFormatted,
+    required this.targetMinor,
+    required this.targetFormatted,
     required this.progress,
-    required this.color,
-    required this.icon,
   });
 
-  factory SavingsGoalOut.fromJson(Map<String, dynamic> json) {
-    return SavingsGoalOut(
-      title: json['title'] as String,
-      current: json['current'] as String,
-      target: json['target'] as String,
-      progress: (json['progress'] as num).toDouble(),
-      color: json['color'] as String,
-      icon: json['icon'] as String,
-    );
-  }
+  final String goalId;
+  final String title;
+  final int savedMinor;
+  final String savedFormatted;
+  final int? targetMinor;
+  final String? targetFormatted;
+  final double? progress;
+
+  factory SavingsGoalOut.fromJson(Map<String, dynamic> json) => SavingsGoalOut(
+    goalId: json['goal_id'] as String,
+    title: json['title'] as String,
+    savedMinor: json['saved_minor'] as int,
+    savedFormatted: json['saved_formatted'] as String,
+    targetMinor: json['target_minor'] as int?,
+    targetFormatted: json['target_formatted'] as String?,
+    progress: (json['progress'] as num?)?.toDouble(),
+  );
 }
 
+/// Mirrors app/savings/schemas.py::SavingsResponse.
 class SavingsResponse {
-  final String totalSavings;
-  final String interestEarned;
-  final List<SavingsGoalOut> goals;
-
   SavingsResponse({
-    required this.totalSavings,
-    required this.interestEarned,
+    required this.totalSavedMinor,
+    required this.totalSavedFormatted,
+    required this.interestEarnedFormatted,
     required this.goals,
   });
 
-  factory SavingsResponse.fromJson(Map<String, dynamic> json) {
-    return SavingsResponse(
-      totalSavings: json['total_savings'] as String,
-      interestEarned: json['interest_earned'] as String,
-      goals: (json['goals'] as List).map((i) => SavingsGoalOut.fromJson(i as Map<String, dynamic>)).toList(),
-    );
-  }
+  final int totalSavedMinor;
+  final String totalSavedFormatted;
+  final String interestEarnedFormatted;
+  final List<SavingsGoalOut> goals;
+
+  factory SavingsResponse.fromJson(Map<String, dynamic> json) => SavingsResponse(
+    totalSavedMinor: json['total_saved_minor'] as int,
+    totalSavedFormatted: json['total_saved_formatted'] as String,
+    interestEarnedFormatted: json['interest_earned_formatted'] as String,
+    goals: (json['goals'] as List).map((i) => SavingsGoalOut.fromJson(i as Map<String, dynamic>)).toList(),
+  );
 }
 
 class SavingsApi {
-  final ApiClient _client;
-
   SavingsApi(this._client);
+  final ApiClient _client;
 
   Future<SavingsResponse> getSavings(String userId) async {
     final json = await _client.get('/savings/$userId');
     return SavingsResponse.fromJson(json);
+  }
+
+  Future<SavingsGoalOut> createGoal(String userId, String title, {int? targetMinor}) async {
+    final json = await _client.post('/savings/$userId/goals', {
+      'title': title,
+      if (targetMinor != null) 'target_minor': targetMinor,
+    });
+    return SavingsGoalOut.fromJson(json);
+  }
+
+  Future<SavingsGoalOut> deposit(String userId, int amountMinor, {String? goalId}) async {
+    final json = await _client.post('/savings/$userId/deposit', {
+      'amount_minor': amountMinor,
+      if (goalId != null) 'goal_id': goalId,
+    });
+    return SavingsGoalOut.fromJson(json);
+  }
+
+  Future<SavingsGoalOut> withdraw(String userId, int amountMinor, {String? goalId}) async {
+    final json = await _client.post('/savings/$userId/withdraw', {
+      'amount_minor': amountMinor,
+      if (goalId != null) 'goal_id': goalId,
+    });
+    return SavingsGoalOut.fromJson(json);
   }
 }

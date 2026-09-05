@@ -21,8 +21,11 @@ import '../api/finance_api.dart';
 import '../api/savings_api.dart';
 import '../api/bills_api.dart';
 import '../api/security_api.dart';
+import '../api/contacts_api.dart';
+import '../api/institutions_api.dart';
 import '../api/transcription_api.dart';
 import '../api/voice_api.dart';
+import '../api/wallets_api.dart';
 import 'models.dart';
 
 /// Which payment flow a PendingPaymentInfo belongs to — picks the confirm
@@ -79,6 +82,9 @@ class AppState extends ChangeNotifier {
   late final SavingsApi savingsApi = SavingsApi(_apiClient);
   late final BillsApi billsApi = BillsApi(_apiClient);
   late final TranscriptionApi transcriptionApi = TranscriptionApi(_apiClient);
+  late final WalletsApi walletsApi = WalletsApi(_apiClient);
+  late final ContactsApi contactsApi = ContactsApi(_apiClient);
+  late final InstitutionsApi institutionsApi = InstitutionsApi(_apiClient);
   final FlutterTts _tts = FlutterTts();
   final AudioRecorder _recorder = AudioRecorder();
   // Flips true the first time the server reports no transcription
@@ -142,6 +148,13 @@ class AppState extends ChangeNotifier {
   String? userId;
   RegistrationStatus? regStatus;
   accounts_api.BalanceResponse? balance;
+  // Additional-currency wallets on top of the default Naira account above
+  // (which stays exactly `balance` — unrelated to this list). Empty until
+  // refreshWallets() runs, and starts empty for real: a wallet only exists
+  // once the user actually opens one.
+  List<WalletOut> wallets = [];
+  bool walletBusy = false;
+  String? walletError;
   bool busy = false;
   String? error;
 
@@ -304,6 +317,46 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // --- additional-currency wallets --------------------------------------
+  Future<void> refreshWallets() async {
+    if (userId == null) return;
+    try {
+      wallets = await walletsApi.listWallets(userId!);
+      notifyListeners();
+    } catch (_) {
+      // Non-fatal — the dashboard just shows only the Naira account until
+      // this succeeds.
+    }
+  }
+
+  /// Opens a new wallet in `currency` (one of WalletsApi.supportedCurrencies)
+  /// and appends it to `wallets` on success. Returns whether it succeeded —
+  /// on failure, `walletError` carries a message worth showing (e.g.
+  /// "You already have a USD wallet.").
+  Future<bool> createWallet(String currency) async {
+    if (userId == null) return false;
+    walletBusy = true;
+    walletError = null;
+    notifyListeners();
+    try {
+      final wallet = await walletsApi.createWallet(userId!, currency);
+      wallets = [...wallets, wallet];
+      walletBusy = false;
+      dismiss();
+      return true;
+    } on ApiException catch (e) {
+      walletBusy = false;
+      walletError = e.detail;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      walletBusy = false;
+      walletError = "Couldn't reach the server.";
+      notifyListeners();
+      return false;
+    }
+  }
+
   // --- duress / panic PIN ----------------------------------------------------
   Future<void> refreshDuressStatus() async {
     if (userId == null) return;
@@ -425,8 +478,19 @@ class AppState extends ChangeNotifier {
       // The channel's only way to learn its user_id — set as soon as the
       // draft account exists (right after phone verification), long
       // before the flow completes.
-      if (response.userId != null) {
+      if (response.userId != null && response.userId != userId) {
         userId = response.userId;
+        // The traditional registration screens get a fresh RegistrationStatus
+        // back from every single step's own API response; /voice/onboarding
+        // only ever returns reply_text + user_id, so regStatus was staying
+        // null for anyone who signed up by voice — that's what was showing
+        // up as "hardcoded"/placeholder name and tier info on the dashboard
+        // afterwards. Pull it explicitly instead. Non-fatal if it fails —
+        // this is a display enhancement, not part of the onboarding flow
+        // itself.
+        try {
+          regStatus = await registrationApi.getStatus(userId!);
+        } catch (_) {}
       }
 
       // Add AI's reply
@@ -455,14 +519,26 @@ class AppState extends ChangeNotifier {
       } else if (response.clientAction == 'open_pin_modal') {
         sheet = SheetType.transaction_pin_input;
         notifyListeners();
+      } else if (response.clientAction == 'open_name_modal') {
+        sheet = SheetType.name_input;
+        notifyListeners();
       } else if (response.clientAction == 'onboarding_complete') {
         if (userId != null) {
           await _persistUserId(userId!);
           await refreshBalance();
+          await refreshWallets();
+          try {
+            regStatus = await registrationApi.getStatus(userId!);
+          } catch (_) {}
         }
-        // Give time for the user to hear the final message before navigating away
+        // Stay on the voice UI (AppScreen.home) rather than bouncing to the
+        // traditional dashboard (AppScreen.dashboard) — someone who just
+        // signed up entirely by voice shouldn't land somewhere else the
+        // moment they finish. VoiceScreen already renders the logged-in
+        // conversation for AppScreen.home; "Traditional" in its top bar is
+        // still one tap away for anyone who wants it.
         _later(() {
-          go(AppScreen.dashboard);
+          go(AppScreen.home);
         }, const Duration(seconds: 2));
       } else if (response.clientAction == 'fallback_to_traditional') {
         _later(() {
@@ -510,6 +586,32 @@ class AppState extends ChangeNotifier {
     sheet = null;
     notifyListeners();
     runOnboardingTranscript("Here is my PIN: $typedPin");
+  }
+
+  /// Not sensitive — this modal exists because some names (especially
+  /// ones not in English) don't come through speech recognition reliably,
+  /// not for privacy. Offered after CONFIRMING_NAME gets a "no" a second
+  /// time; see app/dialogue/onboarding.py.
+  void submitOnboardingName(String typedName) {
+    sheet = null;
+    notifyListeners();
+    runOnboardingTranscript("Here is my name: $typedName");
+  }
+
+  /// Same modal, same "Here is my X: ..." convention as onboarding above —
+  /// but for the *logged-in* voice screen's "change my password"/"change
+  /// my pin" flow (app/dialogue/manager.py's multi-turn credential
+  /// change), which runs over /voice/query, not /voice/onboarding.
+  void submitAccountPassword(String typedPassword) {
+    sheet = null;
+    notifyListeners();
+    _runTranscript("Here is my password: $typedPassword");
+  }
+
+  void submitAccountTransactionPin(String typedPin) {
+    sheet = null;
+    notifyListeners();
+    _runTranscript("Here is my PIN: $typedPin");
   }
 
   void _dispatchTranscript(String words) {
@@ -724,6 +826,7 @@ class AppState extends ChangeNotifier {
       userId = regStatus!.userId;
       await _persistUserId(userId!);
       await refreshBalance();
+      await refreshWallets();
       go(AppScreen.dashboard);
       return true;
     } on ApiException catch (e) {
@@ -951,6 +1054,7 @@ class AppState extends ChangeNotifier {
 
   Future<bool> finishRegistration() async {
     await refreshBalance();
+    await refreshWallets();
     regStep = 15;
     go(AppScreen.dashboard);
     return true;
@@ -1087,6 +1191,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void openAddWalletSheet() {
+    walletError = null;
+    sheet = SheetType.add_wallet;
+    notifyListeners();
+  }
+
   void openPin() {
     sheet = SheetType.pin;
     pin = '';
@@ -1156,6 +1266,75 @@ class AppState extends ChangeNotifier {
       busy = false;
       notifyListeners();
     }
+  }
+
+  /// Shared engine behind every *traditional* (non-voice) payment screen
+  /// below. Contact- and institution-payment *initiation* only exists over
+  /// the voice channel (see app/payments/contact_router.py /
+  /// institution_router.py's own docstrings — PIN is the only REST step
+  /// either has) — so a typed form on send_money/airtime/electricity/etc.
+  /// still goes through POST /voice/query underneath, with a transcript
+  /// this method builds itself rather than one a microphone produced. From
+  /// here on it's the exact same confirm+PIN sheet already used by voice
+  /// and by the barcode scanner above — nothing about that sheet cares
+  /// which screen opened it.
+  Future<bool> _submitPaymentTranscript(String transcript, {required PaymentKind expectedKind}) async {
+    if (userId == null) return false;
+    busy = true;
+    error = null;
+    notifyListeners();
+    try {
+      final turn = await voiceApi.query(sessionId: sessionId, userId: userId!, transcript: transcript);
+      if (turn.data?['status'] == 'awaiting_confirmation') {
+        final nameKey = expectedKind == PaymentKind.contact ? 'contact_name' : 'institution_name';
+        pendingPayment = PendingPaymentInfo(
+          paymentId: turn.data!['payment_id'] as String,
+          kind: expectedKind,
+          recipientName: turn.data![nameKey] as String,
+          amountFormatted: turn.data!['amount_formatted'] as String,
+          replyText: turn.replyText,
+        );
+        sheet = SheetType.confirm;
+        return true;
+      }
+      // Not a clean awaiting_confirmation — Wazi's own reply already
+      // explains why (no such contact/institution, ambiguous match, over
+      // the voice-payment limit, tier-locked, ...). Surface it as-is
+      // rather than a generic failure message.
+      error = turn.replyText;
+      return false;
+    } on ApiException catch (e) {
+      error = e.detail;
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  /// send_money_screen.dart's "To Wazi Account" — `contactName` should be
+  /// an exact name from contactsApi.listContacts/addContact, not free text;
+  /// resolution still runs the same substring match voice does (first
+  /// name is enough unless two contacts share one).
+  Future<bool> initiateContactPayment(String contactName, int amountMinor) {
+    final naira = amountMinor ~/ 100;
+    return _submitPaymentTranscript('send $naira naira to $contactName', expectedKind: PaymentKind.contact);
+  }
+
+  /// electricity/cable_tv/international screens — `institutionName` should
+  /// be an exact name from institutionsApi.listInstitutions.
+  Future<bool> initiateInstitutionPayment(String institutionName, int amountMinor) {
+    final naira = amountMinor ~/ 100;
+    return _submitPaymentTranscript('pay bill at $institutionName $naira naira', expectedKind: PaymentKind.institution);
+  }
+
+  /// airtime_screen.dart — mechanically identical to
+  /// initiateInstitutionPayment (buy_airtime routes through the same
+  /// InstitutionPaymentService, see app/dialogue/manager.py), just
+  /// distinct phrasing so "buy airtime" reads naturally.
+  Future<bool> initiateAirtimePurchase(String providerName, int amountMinor) {
+    final naira = amountMinor ~/ 100;
+    return _submitPaymentTranscript('buy $naira naira airtime on $providerName', expectedKind: PaymentKind.institution);
   }
 
   /// Confirm sheet's "Confirm" button — real POST .../confirm with
@@ -1326,6 +1505,22 @@ class AppState extends ChangeNotifier {
       }
 
       _push(ChatRole.ai, turn.replyText, speaking: speak);
+
+      // "change my pin"/"change my password" — same sensitive-value modal
+      // overlay onboarding uses (voice_screen.dart's _sensitiveSheetTypes),
+      // just submitted back through submitAccountPassword/
+      // submitAccountTransactionPin above instead of the onboarding
+      // equivalents, since this flow runs over /voice/query.
+      if (turn.clientAction == 'open_password_modal') {
+        sheet = SheetType.password_input;
+        notifyListeners();
+        return;
+      }
+      if (turn.clientAction == 'open_pin_modal') {
+        sheet = SheetType.transaction_pin_input;
+        notifyListeners();
+        return;
+      }
 
       if (turn.intent == 'spend_summary' && !turn.needsClarification) {
         _later(() => go(AppScreen.insights), const Duration(milliseconds: 900));

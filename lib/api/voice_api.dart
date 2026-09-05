@@ -8,6 +8,7 @@ class DialogueTurnResponse {
     required this.needsClarification,
     required this.clarificationOptions,
     required this.data,
+    this.clientAction,
   });
 
   final String intent;
@@ -15,6 +16,10 @@ class DialogueTurnResponse {
   final bool needsClarification;
   final List<String>? clarificationOptions;
   final Map<String, dynamic>? data;
+  // Set only mid a change_pin/change_password voice flow (see
+  // app/dialogue/manager.py) — "open_pin_modal" / "open_password_modal",
+  // same vocabulary as onboarding's VoiceOnboardingResponse.clientAction.
+  final String? clientAction;
 
   factory DialogueTurnResponse.fromJson(Map<String, dynamic> json) => DialogueTurnResponse(
     intent: json['intent'] as String,
@@ -22,6 +27,7 @@ class DialogueTurnResponse {
     needsClarification: json['needs_clarification'] as bool? ?? false,
     clarificationOptions: (json['clarification_options'] as List?)?.cast<String>(),
     data: json['data'] as Map<String, dynamic>?,
+    clientAction: json['client_action'] as String?,
   );
 }
 

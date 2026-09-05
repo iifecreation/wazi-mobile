@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
-import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
 import '../api/finance_api.dart';
@@ -93,9 +92,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     else if (_data != null) ...[
                       Row(
                         children: [
-                          _buildSummaryCard(title: 'Income', amount: _data!.income, icon: Icons.arrow_downward_rounded, color: WaziColors.teal),
+                          _buildSummaryCard(title: 'Income', amount: _data!.incomeFormatted, icon: Icons.arrow_downward_rounded, color: WaziColors.teal),
                           const SizedBox(width: 16),
-                          _buildSummaryCard(title: 'Spent', amount: _data!.spent, icon: Icons.arrow_upward_rounded, color: Colors.redAccent),
+                          _buildSummaryCard(title: 'Spent', amount: _data!.spentFormatted, icon: Icons.arrow_upward_rounded, color: Colors.redAccent),
                         ],
                       ),
                       const SizedBox(height: 32),
@@ -109,13 +108,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      ..._data!.categories.map((c) {
-                        Color color;
-                        if (c.color == 'orange') color = Colors.orange;
-                        else if (c.color == 'blue') color = Colors.blue;
-                        else if (c.color == 'purple') color = Colors.purple;
-                        else color = Colors.green;
-                        return _buildCategoryRow(title: c.title, amount: c.amount, percent: c.percent, color: color);
+                      ..._data!.categories.asMap().entries.map((entry) {
+                        const palette = [Colors.orange, Colors.blue, Colors.purple, Colors.green, Colors.teal, Colors.pinkAccent];
+                        final color = palette[entry.key % palette.length];
+                        final c = entry.value;
+                        return _buildCategoryRow(title: c.title, amount: c.amountFormatted, percent: c.percent, color: color);
                       }),
                       const SizedBox(height: 32),
                       
@@ -124,7 +121,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                       const SizedBox(height: 16),
                       ..._data!.goals.map((g) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildGoalCard(title: g.title, current: g.current, target: g.target, progress: g.progress),
+                        child: _buildGoalCard(title: g.title, current: g.currentFormatted, target: g.targetFormatted ?? g.currentFormatted, progress: g.progress ?? 0.0),
                       )),
                     ],
                     const SizedBox(height: 32),

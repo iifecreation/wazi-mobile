@@ -105,6 +105,14 @@ class AccountsApi {
     return BalanceResponse.fromJson(json);
   }
 
+  /// Mock-instant top-up of fake test money — no real funding rail exists
+  /// (every balance in this app is fake). Powers the dashboard's "Add
+  /// Money" button and the voice "add money"/"fund my account" intent.
+  Future<BalanceResponse> fund(String userId, int amountMinor) async {
+    final json = await _client.post('/accounts/$userId/fund', {'amount_minor': amountMinor});
+    return BalanceResponse.fromJson(json);
+  }
+
   Future<SpendSummaryResponse> getSpendSummary(String userId, {String period = 'month', String? category}) async {
     final json = await _client.get(
       '/accounts/$userId/spend-summary',

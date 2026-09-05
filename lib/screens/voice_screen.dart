@@ -24,15 +24,22 @@ class _VoiceScreenState extends State<VoiceScreen> {
   @override
   void initState() {
     super.initState();
-    // Kick off the conversation with an empty transcript to get the AI's greeting
+    // Kick off the conversation with an empty transcript to get the AI's
+    // greeting. Which conversation depends on which screen this widget is
+    // standing in for (see app_root.dart — VoiceScreen is shared between
+    // AppScreen.voiceWelcome and AppScreen.home), not on whether userId is
+    // set: userId is populated partway *through* onboarding (right after
+    // phone verification, well before the flow finishes), so using it here
+    // would flip this screen over to the empty post-login turns list while
+    // onboarding is still in progress.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.appState.userId == null) {
-        if (widget.appState.onboardingTurns.isEmpty) {
-          widget.appState.runOnboardingTranscript('');
-        }
-      } else {
+      if (widget.appState.screen == AppScreen.home) {
         if (widget.appState.turns.isEmpty) {
           widget.appState.run('');
+        }
+      } else {
+        if (widget.appState.onboardingTurns.isEmpty) {
+          widget.appState.runOnboardingTranscript('');
         }
       }
     });
@@ -57,7 +64,11 @@ class _VoiceScreenState extends State<VoiceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isLoggedIn = widget.appState.userId != null;
+    // Same reasoning as initState above — this must track which screen is
+    // active, not userId, or the chat area goes blank as soon as userId is
+    // set mid-onboarding (it switches to the still-empty post-login turns
+    // list before onboarding has actually finished).
+    final isLoggedIn = widget.appState.screen == AppScreen.home;
     final turns = isLoggedIn ? widget.appState.turns : widget.appState.onboardingTurns;
 
     // Auto-scroll when turns change
@@ -131,7 +142,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'For your privacy, please type it below rather than speaking it out loud.',
+                            _sensitiveFieldSubtitle(widget.appState.sheet),
                             style: WaziText.inter(size: 14, color: WaziColors.textAt(.6)),
                             textAlign: TextAlign.center,
                           ),
@@ -169,10 +180,21 @@ class _VoiceScreenState extends State<VoiceScreen> {
                                     widget.appState.submitOnboardingNin(text);
                                     break;
                                   case SheetType.password_input:
-                                    widget.appState.submitOnboardingPassword(text);
+                                    // Same modal, two different flows: onboarding's
+                                    // login-password step (not logged in yet) vs. an
+                                    // already-authenticated "change my password" — see
+                                    // AppState.submitAccountPassword's doc comment.
+                                    widget.appState.userId == null
+                                        ? widget.appState.submitOnboardingPassword(text)
+                                        : widget.appState.submitAccountPassword(text);
                                     break;
                                   case SheetType.transaction_pin_input:
-                                    widget.appState.submitOnboardingTransactionPin(text);
+                                    widget.appState.userId == null
+                                        ? widget.appState.submitOnboardingTransactionPin(text)
+                                        : widget.appState.submitAccountTransactionPin(text);
+                                    break;
+                                  case SheetType.name_input:
+                                    widget.appState.submitOnboardingName(text);
                                     break;
                                   default:
                                     break;
@@ -235,11 +257,17 @@ class _VoiceScreenState extends State<VoiceScreen> {
   }
 }
 
+// Typed-input overlay — BVN/NIN/password/PIN are here because they're
+// sensitive (never spoken); name_input is here for the opposite reason —
+// nothing sensitive about a name, it's just that some names (especially
+// ones not in English) don't come through speech recognition reliably no
+// matter how many times they're repeated, so typing is the fallback.
 const _sensitiveSheetTypes = {
   SheetType.bvn_input,
   SheetType.nin_input,
   SheetType.password_input,
   SheetType.transaction_pin_input,
+  SheetType.name_input,
 };
 
 String _sensitiveFieldTitle(SheetType? sheet) {
@@ -249,12 +277,25 @@ String _sensitiveFieldTitle(SheetType? sheet) {
     case SheetType.nin_input:
       return 'Enter your NIN';
     case SheetType.password_input:
-      return 'Set your login password';
+      // Generic on purpose: this same modal is reused for onboarding's
+      // "set a password" step *and* the logged-in "change my password"
+      // flow's current-value/new-value turns — the chat bubble above it
+      // (Wazi's own reply_text) already says which one this is.
+      return 'Enter your password';
     case SheetType.transaction_pin_input:
-      return 'Set your transaction PIN';
+      return 'Enter your PIN';
+    case SheetType.name_input:
+      return 'Type your name';
     default:
       return '';
   }
+}
+
+String _sensitiveFieldSubtitle(SheetType? sheet) {
+  if (sheet == SheetType.name_input) {
+    return "Some names don't come through clearly by voice — type it here instead.";
+  }
+  return 'For your privacy, please type it below rather than speaking it out loud.';
 }
 
 String _sensitiveFieldHint(SheetType? sheet) {
@@ -267,6 +308,8 @@ String _sensitiveFieldHint(SheetType? sheet) {
       return 'Password';
     case SheetType.transaction_pin_input:
       return '4-digit PIN';
+    case SheetType.name_input:
+      return 'Full name';
     default:
       return '';
   }

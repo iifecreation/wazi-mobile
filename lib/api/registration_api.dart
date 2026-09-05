@@ -101,6 +101,37 @@ class RegistrationApi {
     return RegistrationStatus.fromJson(res);
   }
 
+  /// Requires the *current* password — unlike register()'s pin, which has
+  /// nothing to check yet. See app/registration/service.py::change_password.
+  Future<RegistrationStatus> changePassword(String userId, String oldPassword, String newPassword) async {
+    final res = await _client.post('/registration/$userId/change-password', {
+      'old_password': oldPassword,
+      'new_password': newPassword,
+    });
+    return RegistrationStatus.fromJson(res);
+  }
+
+  Future<RegistrationStatus> changeTransactionPin(String userId, String oldPin, String newPin) async {
+    final res = await _client.post('/registration/$userId/change-pin', {'old_pin': oldPin, 'new_pin': newPin});
+    return RegistrationStatus.fromJson(res);
+  }
+
+  /// Mocked exactly like every other OTP step in this backend — no real
+  /// SMS is sent, and forgotPasswordReset() below accepts any well-formed
+  /// code.
+  Future<void> forgotPasswordStart(String phoneNumber) async {
+    await _client.post('/registration/forgot-password/start', {'phone_number': phoneNumber});
+  }
+
+  Future<RegistrationStatus> forgotPasswordReset(String phoneNumber, String otp, String newPassword) async {
+    final res = await _client.post('/registration/forgot-password/reset', {
+      'phone_number': phoneNumber,
+      'otp': otp,
+      'new_password': newPassword,
+    });
+    return RegistrationStatus.fromJson(res);
+  }
+
   // --- Multi-step Registration Flow ---
 
   Future<void> startPhone(String phoneNumber) async {

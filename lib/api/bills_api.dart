@@ -1,49 +1,37 @@
 import 'api_client.dart';
 
+/// Mirrors app/bills/schemas.py::BillOut — real utility/airtime payments
+/// derived from the user's own transactions (app/baas/), not a hardcoded
+/// stub. `category` is one of app/categorization/service.py's SpendCategory
+/// values — always "utilities" or "airtime_data" here.
 class BillOut {
+  BillOut({required this.title, required this.amountFormatted, required this.occurredAt, required this.category});
+
   final String title;
-  final String amount;
-  final String date;
-  final String icon;
-  final String color;
+  final String amountFormatted;
+  final DateTime occurredAt;
+  final String category;
 
-  BillOut({
-    required this.title,
-    required this.amount,
-    required this.date,
-    required this.icon,
-    required this.color,
-  });
-
-  factory BillOut.fromJson(Map<String, dynamic> json) {
-    return BillOut(
-      title: json['title'] as String,
-      amount: json['amount'] as String,
-      date: json['date'] as String,
-      icon: json['icon'] as String,
-      color: json['color'] as String,
-    );
-  }
+  factory BillOut.fromJson(Map<String, dynamic> json) => BillOut(
+    title: json['title'] as String,
+    amountFormatted: json['amount_formatted'] as String,
+    occurredAt: DateTime.parse(json['occurred_at'] as String),
+    category: json['category'] as String,
+  );
 }
 
 class BillsResponse {
+  BillsResponse({required this.recentBills});
   final List<BillOut> recentBills;
 
-  BillsResponse({
-    required this.recentBills,
-  });
-
-  factory BillsResponse.fromJson(Map<String, dynamic> json) {
-    return BillsResponse(
-      recentBills: (json['recent_bills'] as List).map((i) => BillOut.fromJson(i as Map<String, dynamic>)).toList(),
-    );
-  }
+  factory BillsResponse.fromJson(Map<String, dynamic> json) => BillsResponse(
+    recentBills: (json['recent_bills'] as List).map((i) => BillOut.fromJson(i as Map<String, dynamic>)).toList(),
+  );
 }
 
 class BillsApi {
-  final ApiClient _client;
-
   BillsApi(this._client);
+  final ApiClient _client;
 
   Future<BillsResponse> getBills(String userId) async {
     final json = await _client.get('/bills/$userId');

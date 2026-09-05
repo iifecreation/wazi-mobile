@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
+import '../api/api_client.dart';
 import '../state/app_state.dart';
 import '../state/models.dart';
 import '../theme/colors.dart';
@@ -62,6 +63,77 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
     await widget.appState.login(_fullPhone, _passwordController.text);
+  }
+
+  Future<String?> _promptText(
+    BuildContext context, {
+    required String title,
+    required String hint,
+    bool obscure = false,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: WaziColors.card,
+        title: Text(title, style: WaziText.grotesk(size: 18, weight: FontWeight.w600)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          obscureText: obscure,
+          keyboardType: keyboardType,
+          style: WaziText.inter(size: 16, color: Colors.white),
+          decoration: InputDecoration(hintText: hint, hintStyle: const TextStyle(color: Colors.white38)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Continue')),
+        ],
+      ),
+    );
+  }
+
+  /// The same forgot-password flow voice drives (app/dialogue/onboarding.py:
+  /// phone -> mocked OTP -> new password, typed here rather than said out
+  /// loud), just through the real REST endpoints
+  /// (registrationApi.forgotPasswordStart/Reset) instead of a spoken
+  /// transcript.
+  Future<void> _startForgotPassword() async {
+    final phoneDigits = await _promptText(
+      context,
+      title: 'Reset password',
+      hint: 'Phone number (e.g. 8012345678)',
+      keyboardType: TextInputType.phone,
+    );
+    if (phoneDigits == null || phoneDigits.isEmpty || !mounted) return;
+    final fullPhone = '+234$phoneDigits';
+
+    try {
+      await widget.appState.registrationApi.forgotPasswordStart(fullPhone);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.detail)));
+      return;
+    }
+    if (!mounted) return;
+
+    final otp = await _promptText(context, title: 'Enter the code', hint: 'Code sent to your phone', keyboardType: TextInputType.number);
+    if (otp == null || otp.isEmpty || !mounted) return;
+
+    final newPassword = await _promptText(context, title: 'New password', hint: 'New password', obscure: true);
+    if (newPassword == null || newPassword.isEmpty || !mounted) return;
+
+    try {
+      await widget.appState.registrationApi.forgotPasswordReset(fullPhone, otp, newPassword);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password reset. Sign in with your new password.')),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.detail)));
+    }
   }
 
   @override
@@ -214,6 +286,15 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             ),
                           ),
                           
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _startForgotPassword,
+                              child: Text('Forgot password?', style: WaziText.inter(size: 13.5, weight: FontWeight.w500, color: WaziColors.teal)),
+                            ),
+                          ),
+
                           if (appState.error != null) ...[
                             const SizedBox(height: 24),
                             Center(

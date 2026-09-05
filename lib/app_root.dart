@@ -57,6 +57,7 @@ import 'widgets/sheets/pin_sheet.dart';
 import 'widgets/sheets/privacy_sheet.dart';
 import 'widgets/sheets/success_sheet.dart';
 import 'widgets/sheets/support_sheet.dart';
+import 'widgets/sheets/add_wallet_sheet.dart';
 
 /// Owns the single AppState for the whole app and renders it: one screen
 /// active at a time (no Navigator — matches the design's own state-flag
@@ -281,10 +282,13 @@ class _AppRootState extends State<AppRoot> {
         return SuccessSheet(appState: _appState);
       case SheetType.support:
         return SupportSheet(appState: _appState);
+      case SheetType.add_wallet:
+        return AddWalletSheet(appState: _appState);
       case SheetType.bvn_input:
       case SheetType.nin_input:
       case SheetType.password_input:
       case SheetType.transaction_pin_input:
+      case SheetType.name_input:
       case null:
         return null;
     }

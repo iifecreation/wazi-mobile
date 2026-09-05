@@ -6,6 +6,7 @@ import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
 import '../api/accounts_api.dart';
+import '../api/api_client.dart';
 import '../widgets/bottom_nav.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -29,6 +30,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _loadTxs();
+    widget.appState.refreshWallets();
   }
 
   Future<void> _loadTxs() async {
@@ -167,7 +169,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 
                 const SizedBox(height: 16),
                 
-                // Account Cards
+                // Account Cards — the Naira card is every user's default
+                // (unchanged, from widget.appState.balance); any card after
+                // it is a real additional-currency wallet the user actually
+                // opened (widget.appState.wallets, GET /wallets/{user_id}) —
+                // not a placeholder.
                 SizedBox(
                   height: 220,
                   child: PageView(
@@ -179,13 +185,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         name: 'Naira Account',
                         balance: widget.appState.balance?.balanceFormatted ?? '₦0.00',
                         color: WaziColors.teal,
+                        walletId: null,
                       ),
-                      _buildAccountCard(
-                        currency: 'USD',
-                        name: 'Dollar Account',
-                        balance: '\$0.00',
-                        color: WaziColors.gold,
-                      ),
+                      for (final wallet in widget.appState.wallets)
+                        _buildAccountCard(
+                          currency: wallet.currency,
+                          name: '${wallet.currency} Wallet',
+                          balance: wallet.balanceFormatted,
+                          color: WaziColors.gold,
+                          walletId: wallet.walletId,
+                        ),
                       _buildAddAccountCard(),
                     ],
                   ),
@@ -314,7 +323,64 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildAccountCard({required String currency, required String name, required String balance, required Color color}) {
+  Future<void> _promptAndFund(String? walletId) async {
+    final userId = widget.appState.userId;
+    if (userId == null) return;
+    final controller = TextEditingController();
+    final naira = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: WaziColors.card,
+        title: Text('Add test funds', style: WaziText.grotesk(size: 18, weight: FontWeight.w600)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This is fake money for testing — there\'s no real funding rail.',
+              style: WaziText.inter(size: 12, color: WaziColors.textAt(0.5)),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              style: WaziText.inter(size: 16, color: Colors.white),
+              decoration: const InputDecoration(hintText: 'Amount', hintStyle: TextStyle(color: Colors.white38)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, int.tryParse(controller.text.trim())), child: const Text('Add')),
+        ],
+      ),
+    );
+    if (naira == null || naira <= 0) return;
+    final amountMinor = naira * 100;
+    try {
+      if (walletId == null) {
+        await widget.appState.accountsApi.fund(userId, amountMinor);
+        await widget.appState.refreshBalance();
+      } else {
+        await widget.appState.walletsApi.fundWallet(userId, walletId, amountMinor);
+        await widget.appState.refreshWallets();
+      }
+      if (!mounted) return;
+      setState(() {});
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.detail)));
+    }
+  }
+
+  Widget _buildAccountCard({
+    required String currency,
+    required String name,
+    required String balance,
+    required Color color,
+    required String? walletId,
+  }) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8),
       padding: const EdgeInsets.all(20),
@@ -383,17 +449,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icons.add_rounded,
                   label: 'Add Money',
                   primary: true,
-                  onTap: () {
-                    // Placeholder for Add Money flow
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text('Add Money coming soon!'),
-                        backgroundColor: WaziColors.teal,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    );
-                  },
+                  onTap: () => _promptAndFund(walletId),
                 ),
               ),
             ],
@@ -415,16 +471,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(28),
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('New currencies coming soon!'),
-                backgroundColor: WaziColors.gold,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-            );
-          },
+          onTap: widget.appState.openAddWalletSheet,
           child: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,

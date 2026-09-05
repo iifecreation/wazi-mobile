@@ -87,10 +87,17 @@ class _PayBillsScreenState extends State<PayBillsScreen> {
                       children: [
                         _buildCategoryCard(icon: Icons.bolt_rounded, label: 'Electricity', color: Colors.orange, onTap: () => widget.appState.go(AppScreen.electricity)),
                         _buildCategoryCard(icon: Icons.tv_rounded, label: 'Cable TV', color: Colors.blue, onTap: () => widget.appState.go(AppScreen.cableTv)),
-                        _buildCategoryCard(icon: Icons.wifi_rounded, label: 'Internet', color: Colors.green, onTap: () {}),
-                        _buildCategoryCard(icon: Icons.water_drop_rounded, label: 'Water', color: Colors.cyan, onTap: () {}),
-                        _buildCategoryCard(icon: Icons.school_rounded, label: 'Education', color: Colors.purple, onTap: () {}),
-                        _buildCategoryCard(icon: Icons.account_balance_rounded, label: 'Taxes', color: Colors.redAccent, onTap: () {}),
+                        // Internet/Water/Education/Taxes don't have their
+                        // own dedicated screen — they all pick from the
+                        // same verified-institution registry as
+                        // "Pay a Bill Back Home", so that screen (which
+                        // already lists every non-telecom institution)
+                        // covers them too rather than duplicating four
+                        // near-identical picker screens.
+                        _buildCategoryCard(icon: Icons.wifi_rounded, label: 'Internet', color: Colors.green, onTap: () => widget.appState.go(AppScreen.international)),
+                        _buildCategoryCard(icon: Icons.water_drop_rounded, label: 'Water', color: Colors.cyan, onTap: () => widget.appState.go(AppScreen.international)),
+                        _buildCategoryCard(icon: Icons.school_rounded, label: 'Education', color: Colors.purple, onTap: () => widget.appState.go(AppScreen.international)),
+                        _buildCategoryCard(icon: Icons.account_balance_rounded, label: 'Taxes', color: Colors.redAccent, onTap: () => widget.appState.go(AppScreen.international)),
                       ],
                     ),
                     const SizedBox(height: 32),
@@ -100,27 +107,25 @@ class _PayBillsScreenState extends State<PayBillsScreen> {
                     else if (_error != null)
                       Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
                     else if (_data != null)
-                      ..._data!.recentBills.map((b) {
-                        Color color;
-                        if (b.color == 'orange') color = Colors.orange;
-                        else if (b.color == 'blue') color = Colors.blue;
-                        else if (b.color == 'green') color = Colors.green;
-                        else color = Colors.grey;
-                        
-                        IconData icon;
-                        if (b.icon == 'bolt_rounded') icon = Icons.bolt_rounded;
-                        else if (b.icon == 'tv_rounded') icon = Icons.tv_rounded;
-                        else if (b.icon == 'wifi_rounded') icon = Icons.wifi_rounded;
-                        else icon = Icons.receipt_rounded;
-                        
-                        return _buildRecentBill(
-                          title: b.title,
-                          amount: b.amount,
-                          date: b.date,
-                          icon: icon,
-                          color: color,
-                        );
-                      }),
+                      if (_data!.recentBills.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Text(
+                            'No bills paid yet — pick a category above, or just say "pay electricity bill at Ikeja Electric".',
+                            style: WaziText.inter(size: 13, color: WaziColors.textAt(0.5)),
+                          ),
+                        )
+                      else
+                        ..._data!.recentBills.map((b) {
+                          final isUtility = b.category == 'utilities';
+                          return _buildRecentBill(
+                            title: b.title,
+                            amount: b.amountFormatted,
+                            date: _formatBillDate(b.occurredAt),
+                            icon: isUtility ? Icons.bolt_rounded : Icons.smartphone_rounded,
+                            color: isUtility ? Colors.orange : Colors.green,
+                          );
+                        }),
                     const SizedBox(height: 32),
                   ],
                 ),
@@ -159,6 +164,11 @@ class _PayBillsScreenState extends State<PayBillsScreen> {
         ),
       ),
     );
+  }
+
+  String _formatBillDate(DateTime dt) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
   }
 
   Widget _buildRecentBill({required String title, required String amount, required String date, required IconData icon, required Color color}) {

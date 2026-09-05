@@ -5,7 +5,11 @@ import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
 
+import '../api/api_client.dart';
 import '../api/savings_api.dart';
+
+const _goalColors = [Colors.blue, Colors.orange, Colors.purple, Colors.green, Colors.teal];
+const _goalIcon = Icons.savings_rounded;
 
 class SavingsScreen extends StatefulWidget {
   const SavingsScreen({super.key, required this.appState});
@@ -46,6 +50,112 @@ class _SavingsScreenState extends State<SavingsScreen> {
         _error = 'Failed to load savings data';
         _loading = false;
       });
+    }
+  }
+
+  Future<int?> _promptAmount(String title, String actionLabel) async {
+    final controller = TextEditingController();
+    return showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: WaziColors.card,
+        title: Text(title, style: WaziText.grotesk(size: 18, weight: FontWeight.w600)),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          style: WaziText.inter(size: 16, color: Colors.white),
+          decoration: const InputDecoration(hintText: 'Amount in Naira', hintStyle: TextStyle(color: Colors.white38)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              final naira = int.tryParse(controller.text.trim());
+              Navigator.pop(context, naira != null ? naira * 100 : null);
+            },
+            child: Text(actionLabel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _promptNewGoal() async {
+    final titleController = TextEditingController();
+    final targetController = TextEditingController();
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: WaziColors.card,
+        title: Text('New savings goal', style: WaziText.grotesk(size: 18, weight: FontWeight.w600)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleController,
+              autofocus: true,
+              style: WaziText.inter(size: 16, color: Colors.white),
+              decoration: const InputDecoration(hintText: 'Goal name (e.g. Vacation)', hintStyle: TextStyle(color: Colors.white38)),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: targetController,
+              keyboardType: TextInputType.number,
+              style: WaziText.inter(size: 16, color: Colors.white),
+              decoration: const InputDecoration(hintText: 'Target amount (optional)', hintStyle: TextStyle(color: Colors.white38)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, {'title': titleController.text.trim(), 'target': targetController.text.trim()}),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || result['title']!.isEmpty) return;
+    final userId = widget.appState.userId;
+    if (userId == null) return;
+    final targetNaira = int.tryParse(result['target'] ?? '');
+    try {
+      await widget.appState.savingsApi.createGoal(userId, result['title']!, targetMinor: targetNaira != null ? targetNaira * 100 : null);
+      await _loadData();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not create goal')));
+    }
+  }
+
+  Future<void> _depositInto(SavingsGoalOut goal) async {
+    final amountMinor = await _promptAmount('Add to ${goal.title}', 'Save');
+    if (amountMinor == null || amountMinor <= 0) return;
+    final userId = widget.appState.userId;
+    if (userId == null) return;
+    try {
+      await widget.appState.savingsApi.deposit(userId, amountMinor, goalId: goal.goalId);
+      await widget.appState.refreshBalance();
+      await _loadData();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.detail)));
+    }
+  }
+
+  Future<void> _withdrawFrom(SavingsGoalOut goal) async {
+    final amountMinor = await _promptAmount('Withdraw from ${goal.title}', 'Withdraw');
+    if (amountMinor == null || amountMinor <= 0) return;
+    final userId = widget.appState.userId;
+    if (userId == null) return;
+    try {
+      await widget.appState.savingsApi.withdraw(userId, amountMinor, goalId: goal.goalId);
+      await widget.appState.refreshBalance();
+      await _loadData();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.detail)));
     }
   }
 
@@ -93,13 +203,13 @@ class _SavingsScreenState extends State<SavingsScreen> {
                           children: [
                             Text('Total Savings', style: WaziText.inter(size: 14, color: WaziColors.gold.withValues(alpha: 0.8))),
                             const SizedBox(height: 8),
-                            Text(_data!.totalSavings, style: WaziText.grotesk(size: 32, weight: FontWeight.w600, color: WaziColors.gold)),
+                            Text(_data!.totalSavedFormatted, style: WaziText.grotesk(size: 32, weight: FontWeight.w600, color: WaziColors.gold)),
                             const SizedBox(height: 16),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text('Interest Earned: ', style: WaziText.inter(size: 12, color: Colors.white.withValues(alpha: 0.5))),
-                                Text(_data!.interestEarned, style: WaziText.inter(size: 12, weight: FontWeight.w600, color: Colors.green)),
+                                Text(_data!.interestEarnedFormatted, style: WaziText.inter(size: 12, weight: FontWeight.w600, color: Colors.green)),
                               ],
                             ),
                           ],
@@ -110,38 +220,32 @@ class _SavingsScreenState extends State<SavingsScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text('Your Goals', style: WaziText.grotesk(size: 16, weight: FontWeight.w600, color: WaziColors.textAt(0.7))),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(999),
+                          GestureDetector(
+                            onTap: _promptNewGoal,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text('+ New', style: WaziText.inter(size: 12, weight: FontWeight.w600, color: Colors.white)),
                             ),
-                            child: Text('+ New', style: WaziText.inter(size: 12, weight: FontWeight.w600, color: Colors.white)),
                           ),
                         ],
                       ),
                       const SizedBox(height: 16),
-                      ..._data!.goals.map((g) {
-                        Color color;
-                        if (g.color == 'blue') color = Colors.blue;
-                        else if (g.color == 'orange') color = Colors.orange;
-                        else if (g.color == 'purple') color = Colors.purple;
-                        else color = Colors.green;
-
-                        IconData icon;
-                        if (g.icon == 'shield_rounded') icon = Icons.shield_rounded;
-                        else if (g.icon == 'flight_takeoff_rounded') icon = Icons.flight_takeoff_rounded;
-                        else if (g.icon == 'laptop_mac_rounded') icon = Icons.laptop_mac_rounded;
-                        else icon = Icons.star_rounded;
-
-                        return _buildGoalCard(
-                          title: g.title,
-                          current: g.current,
-                          target: g.target,
-                          progress: g.progress,
-                          color: color,
-                          icon: icon,
-                        );
+                      if (_data!.goals.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Text(
+                            "No savings goals yet — tap \"+ New\" to start one, or just say \"save 5000 naira\".",
+                            style: WaziText.inter(size: 14, color: WaziColors.textAt(0.5)),
+                          ),
+                        ),
+                      ..._data!.goals.asMap().entries.map((entry) {
+                        final g = entry.value;
+                        final color = _goalColors[entry.key % _goalColors.length];
+                        return _buildGoalCard(goal: g, color: color, icon: _goalIcon);
                       }),
                     ],
                     const SizedBox(height: 32),
@@ -155,14 +259,8 @@ class _SavingsScreenState extends State<SavingsScreen> {
     );
   }
 
-  Widget _buildGoalCard({
-    required String title,
-    required String current,
-    required String target,
-    required double progress,
-    required Color color,
-    required IconData icon,
-  }) {
+  Widget _buildGoalCard({required SavingsGoalOut goal, required Color color, required IconData icon}) {
+    final progress = goal.progress ?? 0.0;
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -186,14 +284,15 @@ class _SavingsScreenState extends State<SavingsScreen> {
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: Text(title, style: WaziText.inter(size: 16, weight: FontWeight.w600, color: Colors.white)),
+                child: Text(goal.title, style: WaziText.inter(size: 16, weight: FontWeight.w600, color: Colors.white)),
               ),
-              Text('${(progress * 100).toInt()}%', style: WaziText.inter(size: 14, weight: FontWeight.w600, color: color)),
+              if (goal.targetMinor != null)
+                Text('${(progress * 100).toInt()}%', style: WaziText.inter(size: 14, weight: FontWeight.w600, color: color)),
             ],
           ),
           const SizedBox(height: 16),
           LinearProgressIndicator(
-            value: progress,
+            value: goal.targetMinor != null ? progress : null,
             backgroundColor: Colors.white.withValues(alpha: 0.05),
             valueColor: AlwaysStoppedAnimation<Color>(color),
             minHeight: 8,
@@ -203,8 +302,29 @@ class _SavingsScreenState extends State<SavingsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(current, style: WaziText.inter(size: 14, weight: FontWeight.w500, color: Colors.white)),
-              Text('of $target', style: WaziText.inter(size: 12, color: WaziColors.textAt(0.5))),
+              Text(goal.savedFormatted, style: WaziText.inter(size: 14, weight: FontWeight.w500, color: Colors.white)),
+              if (goal.targetFormatted != null)
+                Text('of ${goal.targetFormatted}', style: WaziText.inter(size: 12, color: WaziColors.textAt(0.5))),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _depositInto(goal),
+                  style: OutlinedButton.styleFrom(side: BorderSide(color: WaziColors.textAt(.14)), padding: const EdgeInsets.symmetric(vertical: 10)),
+                  child: Text('Add money', style: WaziText.inter(size: 13, weight: FontWeight.w600, color: Colors.white)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _withdrawFrom(goal),
+                  style: OutlinedButton.styleFrom(side: BorderSide(color: WaziColors.textAt(.14)), padding: const EdgeInsets.symmetric(vertical: 10)),
+                  child: Text('Withdraw', style: WaziText.inter(size: 13, weight: FontWeight.w600, color: Colors.white)),
+                ),
+              ),
             ],
           ),
         ],

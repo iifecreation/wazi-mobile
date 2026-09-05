@@ -4,7 +4,16 @@ import '../state/app_state.dart';
 import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
+import '../widgets/payment_picker_form.dart';
 
+/// "International Transfer" — no real FX/remittance rail exists in this
+/// backend (every wallet here is an isolated fake balance, there's no
+/// currency conversion or cross-border payout). What *is* real and
+/// already built is exactly what this screen's original differentiator
+/// concept was actually describing — "diaspora direct-to-obligation
+/// payments": someone abroad pays a bill back home directly, in Naira,
+/// instead of wiring cash to a person who then has to hand it over. So
+/// this screen is that: pick a verified institution, pay it in Naira.
 class InternationalScreen extends StatelessWidget {
   const InternationalScreen({super.key, required this.appState});
 
@@ -26,136 +35,43 @@ class InternationalScreen extends StatelessWidget {
                     child: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: WaziColors.text),
                   ),
                   const SizedBox(width: 16),
-                  Text('International Transfer', style: WaziText.grotesk(size: 20, weight: FontWeight.w600, letterSpacing: -0.2)),
+                  Text('Pay a Bill Back Home', style: WaziText.grotesk(size: 20, weight: FontWeight.w600, letterSpacing: -0.2)),
                 ],
               ),
             ),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('You Send', style: WaziText.inter(size: 14, color: WaziColors.textAt(0.7))),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              style: WaziText.grotesk(size: 28, weight: FontWeight.w600, color: Colors.white),
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                border: InputBorder.none,
-                                hintText: '0.00',
-                                hintStyle: WaziText.grotesk(size: 28, color: WaziColors.textAt(0.3)),
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(
-                              children: [
-                                Text('USD', style: WaziText.inter(size: 14, weight: FontWeight.w600, color: Colors.white)),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 16),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                child: PaymentPickerForm(
+                  appState: appState,
+                  pickerLabel: 'Institution',
+                  infoBanner: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
                     ),
-                    const SizedBox(height: 16),
-                    Row(
+                    child: Row(
                       children: [
-                        const Icon(Icons.swap_vert_rounded, color: WaziColors.gold, size: 24),
+                        const Icon(Icons.info_outline_rounded, color: Colors.blue, size: 20),
                         const SizedBox(width: 12),
-                        Text('1 USD = 1,540.50 NGN', style: WaziText.inter(size: 14, weight: FontWeight.w500, color: WaziColors.gold)),
+                        Expanded(
+                          child: Text(
+                            'Pay a school, hospital, or utility bill back home directly, in Naira — no separate FX transfer, no handing cash to someone else.',
+                            style: WaziText.inter(size: 12, color: Colors.blue.withValues(alpha: 0.8)),
+                          ),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    Text('Recipient Gets', style: WaziText.inter(size: 14, color: WaziColors.textAt(0.7))),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              style: WaziText.grotesk(size: 28, weight: FontWeight.w600, color: Colors.white),
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                border: InputBorder.none,
-                                hintText: '0.00',
-                                hintStyle: WaziText.grotesk(size: 28, color: WaziColors.textAt(0.3)),
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(
-                              children: [
-                                Text('NGN', style: WaziText.inter(size: 14, weight: FontWeight.w600, color: Colors.white)),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 16),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline_rounded, color: Colors.blue, size: 20),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text('Transfers usually arrive in 1-3 business days depending on the destination country.', style: WaziText.inter(size: 12, color: Colors.blue.withValues(alpha: 0.8))),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 48),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: () {},
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: WaziColors.gold,
-                          foregroundColor: Colors.black,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        child: Text('Continue', style: WaziText.inter(size: 16, weight: FontWeight.w600)),
-                      ),
-                    ),
-                  ],
+                  ),
+                  loadOptions: () async {
+                    final all = await appState.institutionsApi.listInstitutions();
+                    final obligations = all.where((i) => i.category != 'telecom').toList();
+                    return obligations.map((i) => PickerOption(id: i.institutionId, label: i.name, subtitle: i.obligationLabel)).toList();
+                  },
+                  onSubmit: (name, amountMinor) => appState.initiateInstitutionPayment(name, amountMinor),
+                  submitLabel: 'Pay Now',
                 ),
               ),
             ),

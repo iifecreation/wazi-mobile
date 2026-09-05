@@ -3,6 +3,7 @@ import '../state/app_state.dart';
 import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
+import '../widgets/credential_change_dialog.dart';
 
 class SecurityCenterScreen extends StatefulWidget {
   const SecurityCenterScreen({super.key, required this.appState});
@@ -106,12 +107,36 @@ class _SecurityCenterScreenState extends State<SecurityCenterScreen> {
                           _SecurityActionRow(
                             icon: Icons.password_rounded,
                             title: 'Change Password',
-                            onTap: () {},
+                            onTap: () {
+                              final userId = widget.appState.userId;
+                              if (userId == null) return;
+                              showChangeCredentialDialog(
+                                context,
+                                title: 'password',
+                                oldHint: 'Current password',
+                                newHint: 'New password',
+                                isPin: false,
+                                onSubmit: (oldValue, newValue) =>
+                                    widget.appState.registrationApi.changePassword(userId, oldValue, newValue),
+                              );
+                            },
                           ),
                           _SecurityActionRow(
                             icon: Icons.pin_rounded,
                             title: 'Change Payment PIN',
-                            onTap: () {},
+                            onTap: () {
+                              final userId = widget.appState.userId;
+                              if (userId == null) return;
+                              showChangeCredentialDialog(
+                                context,
+                                title: 'PIN',
+                                oldHint: 'Current 4-digit PIN',
+                                newHint: 'New 4-digit PIN',
+                                isPin: true,
+                                onSubmit: (oldValue, newValue) =>
+                                    widget.appState.registrationApi.changeTransactionPin(userId, oldValue, newValue),
+                              );
+                            },
                           ),
                           _SecurityToggleRow(
                             icon: Icons.fingerprint_rounded,

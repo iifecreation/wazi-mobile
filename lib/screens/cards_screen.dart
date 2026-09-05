@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
-import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
+import '../api/accounts_api.dart' show TransactionOut;
+import '../api/api_client.dart';
 import '../api/cards_api.dart';
 import '../widgets/bottom_nav.dart';
 
@@ -18,9 +19,10 @@ class CardsScreen extends StatefulWidget {
 
 class _CardsScreenState extends State<CardsScreen> {
   bool _loading = true;
+  bool _freezing = false;
   String? _error;
   List<CardOut> _cards = [];
-  List<CardTransactionOut> _transactions = [];
+  List<TransactionOut> _transactions = [];
 
   @override
   void initState() {
@@ -49,6 +51,27 @@ class _CardsScreenState extends State<CardsScreen> {
         _error = 'Failed to load card data';
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _toggleFreeze() async {
+    final userId = widget.appState.userId;
+    if (userId == null || _cards.isEmpty) return;
+    final card = _cards.first;
+    setState(() => _freezing = true);
+    try {
+      final updated = card.isFrozen
+          ? await widget.appState.cardsApi.unfreeze(userId, card.cardId)
+          : await widget.appState.cardsApi.freeze(userId, card.cardId);
+      if (!mounted) return;
+      setState(() {
+        _cards[0] = updated;
+        _freezing = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _freezing = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.detail)));
     }
   }
 
@@ -100,8 +123,10 @@ class _CardsScreenState extends State<CardsScreen> {
                               height: 220,
                               padding: const EdgeInsets.all(24),
                               decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFF2A2D34), Color(0xFF141518)],
+                                gradient: LinearGradient(
+                                  colors: _cards.first.isFrozen
+                                      ? [Colors.blueGrey.shade900, Colors.blueGrey.shade800]
+                                      : const [Color(0xFF2A2D34), Color(0xFF141518)],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                 ),
@@ -122,8 +147,11 @@ class _CardsScreenState extends State<CardsScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(_cards.first.name, style: WaziText.grotesk(size: 18, color: Colors.white.withValues(alpha: 0.7), letterSpacing: 1)),
-                                      Icon(Icons.contactless_outlined, color: Colors.white.withValues(alpha: 0.7)),
+                                      Text('Wazi Card', style: WaziText.grotesk(size: 18, color: Colors.white.withValues(alpha: 0.7), letterSpacing: 1)),
+                                      Icon(
+                                        _cards.first.isFrozen ? Icons.ac_unit_rounded : Icons.contactless_outlined,
+                                        color: Colors.white.withValues(alpha: 0.7),
+                                      ),
                                     ],
                                   ),
                                   Text('**** **** **** ${_cards.first.last4}', style: WaziText.grotesk(size: 24, weight: FontWeight.w500, color: Colors.white, letterSpacing: 2)),
@@ -136,7 +164,7 @@ class _CardsScreenState extends State<CardsScreen> {
                                         children: [
                                           Text('Cardholder', style: WaziText.inter(size: 10, color: Colors.white.withValues(alpha: 0.5))),
                                           const SizedBox(height: 4),
-                                          Text(_cards.first.cardholder, style: WaziText.inter(size: 14, weight: FontWeight.w600, color: Colors.white, letterSpacing: 1)),
+                                          Text(_cards.first.cardholderName, style: WaziText.inter(size: 14, weight: FontWeight.w600, color: Colors.white, letterSpacing: 1)),
                                         ],
                                       ),
                                       Column(
@@ -144,7 +172,7 @@ class _CardsScreenState extends State<CardsScreen> {
                                         children: [
                                           Text('Expires', style: WaziText.inter(size: 10, color: Colors.white.withValues(alpha: 0.5))),
                                           const SizedBox(height: 4),
-                                          Text(_cards.first.expires, style: WaziText.inter(size: 14, weight: FontWeight.w600, color: Colors.white, letterSpacing: 1)),
+                                          Text(_cards.first.expiresDisplay, style: WaziText.inter(size: 14, weight: FontWeight.w600, color: Colors.white, letterSpacing: 1)),
                                         ],
                                       ),
                                       Text(_cards.first.brand, style: WaziText.grotesk(size: 24, weight: FontWeight.w800, color: Colors.white).copyWith(fontStyle: FontStyle.italic)),
@@ -160,7 +188,12 @@ class _CardsScreenState extends State<CardsScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         _buildActionButton(icon: Icons.visibility_off_outlined, label: 'Details'),
-                        _buildActionButton(icon: Icons.ac_unit_rounded, label: 'Freeze'),
+                        _buildActionButton(
+                          icon: _cards.isNotEmpty && _cards.first.isFrozen ? Icons.ac_unit_rounded : Icons.severe_cold_outlined,
+                          label: _cards.isNotEmpty && _cards.first.isFrozen ? 'Unfreeze' : 'Freeze',
+                          onTap: _cards.isEmpty || _freezing ? null : _toggleFreeze,
+                          active: _cards.isNotEmpty && _cards.first.isFrozen,
+                        ),
                         _buildActionButton(icon: Icons.tune_rounded, label: 'Limits'),
                         _buildActionButton(icon: Icons.settings_outlined, label: 'Settings'),
                       ],
@@ -178,17 +211,11 @@ class _CardsScreenState extends State<CardsScreen> {
                       Center(child: Text('No recent activity', style: WaziText.inter(size: 14, color: Colors.white54)))
                     else
                       ..._transactions.map((tx) {
-                        IconData icon;
-                        if (tx.icon == 'movie_outlined') icon = Icons.movie_outlined;
-                        else if (tx.icon == 'local_taxi_outlined') icon = Icons.local_taxi_outlined;
-                        else if (tx.icon == 'coffee_outlined') icon = Icons.coffee_outlined;
-                        else icon = Icons.receipt_long_outlined;
-                        
                         return _buildTransaction(
-                          title: tx.title,
-                          date: tx.date,
-                          amount: tx.amount,
-                          icon: icon,
+                          title: tx.counterparty,
+                          date: _formatTxDate(tx.occurredAt),
+                          amount: '${tx.direction == 'credit' ? '+' : '-'}${tx.amountFormatted}',
+                          icon: _iconForCategory(tx.category),
                         );
                       }),
                     const SizedBox(height: 32),
@@ -224,23 +251,63 @@ class _CardsScreenState extends State<CardsScreen> {
     );
   }
 
-  Widget _buildActionButton({required IconData icon, required String label}) {
-    return Column(
-      children: [
-        Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+  Widget _buildActionButton({required IconData icon, required String label, VoidCallback? onTap, bool active = false}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: active ? WaziColors.teal.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
+              shape: BoxShape.circle,
+              border: Border.all(color: active ? WaziColors.teal.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.1)),
+            ),
+            child: Icon(icon, color: active ? WaziColors.teal : Colors.white, size: 24),
           ),
-          child: Icon(icon, color: Colors.white, size: 24),
-        ),
-        const SizedBox(height: 8),
-        Text(label, style: WaziText.inter(size: 12, color: WaziColors.textAt(0.7), weight: FontWeight.w500)),
-      ],
+          const SizedBox(height: 8),
+          Text(label, style: WaziText.inter(size: 12, color: WaziColors.textAt(0.7), weight: FontWeight.w500)),
+        ],
+      ),
     );
+  }
+
+  String _formatTxDate(DateTime dt) {
+    final now = DateTime.now();
+    final isToday = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    final yesterday = now.subtract(const Duration(days: 1));
+    final isYesterday = dt.year == yesterday.year && dt.month == yesterday.month && dt.day == yesterday.day;
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+    final time = '$hour:$minute $ampm';
+    if (isToday) return 'Today, $time';
+    if (isYesterday) return 'Yesterday, $time';
+    return '${dt.month}/${dt.day}/${dt.year}';
+  }
+
+  IconData _iconForCategory(String category) {
+    switch (category) {
+      case 'transport':
+        return Icons.local_taxi_outlined;
+      case 'food':
+        return Icons.restaurant_outlined;
+      case 'airtime_data':
+        return Icons.smartphone_outlined;
+      case 'utilities':
+        return Icons.bolt_outlined;
+      case 'entertainment':
+        return Icons.movie_outlined;
+      case 'shopping':
+        return Icons.shopping_bag_outlined;
+      case 'income':
+        return Icons.arrow_downward_rounded;
+      case 'transfer':
+        return Icons.swap_horiz_rounded;
+      default:
+        return Icons.receipt_long_outlined;
+    }
   }
 
   Widget _buildTransaction({required String title, required String date, required String amount, required IconData icon}) {
