@@ -12,6 +12,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import '../api/accounts_api.dart' as accounts_api;
 import '../api/api_client.dart';
+import '../api/fx_api.dart';
 import '../api/payments_api.dart';
 import '../api/registration_api.dart';
 import '../api/requests_api.dart';
@@ -24,6 +25,7 @@ import '../api/security_api.dart';
 import '../api/contacts_api.dart';
 import '../api/institutions_api.dart';
 import '../api/transcription_api.dart';
+import '../api/transfers_api.dart';
 import '../api/voice_api.dart';
 import '../api/wallets_api.dart';
 import 'models.dart';
@@ -70,6 +72,10 @@ class AppState extends ChangeNotifier {
   }
 
   final ApiClient _apiClient = ApiClient();
+
+  /// Exposed so screens can make direct API calls not yet wrapped in
+  /// a dedicated service (e.g. transaction receipt detail endpoint).
+  ApiClient get apiClient => _apiClient;
   late final RegistrationApi registrationApi = RegistrationApi(_apiClient);
   late final accounts_api.AccountsApi accountsApi = accounts_api.AccountsApi(_apiClient);
   late final VoiceApi voiceApi = VoiceApi(_apiClient);
@@ -85,6 +91,8 @@ class AppState extends ChangeNotifier {
   late final WalletsApi walletsApi = WalletsApi(_apiClient);
   late final ContactsApi contactsApi = ContactsApi(_apiClient);
   late final InstitutionsApi institutionsApi = InstitutionsApi(_apiClient);
+  late final TransfersApi transfersApi = TransfersApi(_apiClient);
+  late final FxApi fxApi = FxApi(_apiClient);
   final FlutterTts _tts = FlutterTts();
   final AudioRecorder _recorder = AudioRecorder();
   // Flips true the first time the server reports no transcription
@@ -522,6 +530,18 @@ class AppState extends ChangeNotifier {
       } else if (response.clientAction == 'open_name_modal') {
         sheet = SheetType.name_input;
         notifyListeners();
+      } else if (response.clientAction == 'open_phone_modal') {
+        sheet = SheetType.phone_input;
+        notifyListeners();
+      } else if (response.clientAction == 'open_otp_modal') {
+        sheet = SheetType.otp_input;
+        notifyListeners();
+      } else if (response.clientAction == 'open_email_modal') {
+        sheet = SheetType.email_input;
+        notifyListeners();
+      } else if (response.clientAction == 'open_text_modal') {
+        sheet = SheetType.free_text_input;
+        notifyListeners();
       } else if (response.clientAction == 'onboarding_complete') {
         if (userId != null) {
           await _persistUserId(userId!);
@@ -596,6 +616,39 @@ class AppState extends ChangeNotifier {
     sheet = null;
     notifyListeners();
     runOnboardingTranscript("Here is my name: $typedName");
+  }
+
+  // --- universal "let me type it instead" escape hatch ----------------------
+  // None of these four are sensitive — they exist because *any* spoken
+  // onboarding step can be swapped for a typed one on request ("I want to
+  // type it"), same idea as submitOnboardingName above. See
+  // app/dialogue/onboarding.py's _TYPEABLE_STATES for which steps offer this
+  // and why the modal-prefix convention ("Here is my X: ...") is enough for
+  // every one of them to parse correctly regardless of which state is
+  // actually asking.
+
+  void submitOnboardingPhone(String typedPhone) {
+    sheet = null;
+    notifyListeners();
+    runOnboardingTranscript("Here is my phone number: $typedPhone");
+  }
+
+  void submitOnboardingOtp(String typedCode) {
+    sheet = null;
+    notifyListeners();
+    runOnboardingTranscript("Here is my code: $typedCode");
+  }
+
+  void submitOnboardingEmail(String typedEmail) {
+    sheet = null;
+    notifyListeners();
+    runOnboardingTranscript("Here is my email: $typedEmail");
+  }
+
+  void submitOnboardingFreeText(String typedAnswer) {
+    sheet = null;
+    notifyListeners();
+    runOnboardingTranscript("Here is my answer: $typedAnswer");
   }
 
   /// Same modal, same "Here is my X: ..." convention as onboarding above —
@@ -1269,22 +1322,18 @@ class AppState extends ChangeNotifier {
   }
 
   /// Shared engine behind every *traditional* (non-voice) payment screen
-  /// below. Contact- and institution-payment *initiation* only exists over
-  /// the voice channel (see app/payments/contact_router.py /
-  /// institution_router.py's own docstrings — PIN is the only REST step
-  /// either has) — so a typed form on send_money/airtime/electricity/etc.
-  /// still goes through POST /voice/query underneath, with a transcript
-  /// this method builds itself rather than one a microphone produced. From
-  /// here on it's the exact same confirm+PIN sheet already used by voice
-  /// and by the barcode scanner above — nothing about that sheet cares
-  /// which screen opened it.
+  /// below. Uses /voice/assistant for auth-aware routing.
   Future<bool> _submitPaymentTranscript(String transcript, {required PaymentKind expectedKind}) async {
     if (userId == null) return false;
     busy = true;
     error = null;
     notifyListeners();
     try {
-      final turn = await voiceApi.query(sessionId: sessionId, userId: userId!, transcript: transcript);
+      final turn = await voiceApi.assistant(
+        sessionId: sessionId,
+        transcript: transcript,
+        authToken: userId,
+      );
       if (turn.data?['status'] == 'awaiting_confirmation') {
         final nameKey = expectedKind == PaymentKind.contact ? 'contact_name' : 'institution_name';
         pendingPayment = PendingPaymentInfo(
@@ -1297,10 +1346,20 @@ class AppState extends ChangeNotifier {
         sheet = SheetType.confirm;
         return true;
       }
-      // Not a clean awaiting_confirmation — Wazi's own reply already
-      // explains why (no such contact/institution, ambiguous match, over
-      // the voice-payment limit, tier-locked, ...). Surface it as-is
-      // rather than a generic failure message.
+      error = turn.replyText;
+      return false;
+    } on ApiException catch (e) {
+      error = e.detail;
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+        );
+        sheet = SheetType.confirm;
+        return true;
+      }
       error = turn.replyText;
       return false;
     } on ApiException catch (e) {
@@ -1312,10 +1371,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// send_money_screen.dart's "To Wazi Account" — `contactName` should be
-  /// an exact name from contactsApi.listContacts/addContact, not free text;
-  /// resolution still runs the same substring match voice does (first
-  /// name is enough unless two contacts share one).
+  /// send_money_screen.dart's "To Wazi Account".
   Future<bool> initiateContactPayment(String contactName, int amountMinor) {
     final naira = amountMinor ~/ 100;
     return _submitPaymentTranscript('send $naira naira to $contactName', expectedKind: PaymentKind.contact);
@@ -1464,17 +1520,12 @@ class AppState extends ChangeNotifier {
   void run(String kind) => _runTranscript(_kindPhrases[kind] ?? kind);
 
   /// The real ASR->NLU->reply round trip: push what the user "said", call
-  /// POST /voice/query, push whatever Wazi-server actually says back.
+  /// POST /voice/assistant (auth-aware), push whatever Wazi-server says back.
   Future<void> _runTranscript(String transcript) async {
     if (userId == null) return;
     if (transcript.trim().isEmpty) {
-      // The screen's own kick-off call (see voice_screen.dart's initState)
-      // — a real greeting belongs here, not "Sorry, I didn't catch that"
-      // (which is what the server's rule-based parser would say to an
-      // empty transcript, since no keyword rule matches nothing). No
-      // network round trip needed for a canned greeting.
       if (turns.isEmpty) {
-        _push(ChatRole.ai, "Hi, I'm listening. Ask for a balance, send money, buy airtime — whatever you need.", speaking: speak);
+        _push(ChatRole.ai, "Hey! I'm Wazi. Ask me about your balance, send money, buy airtime — whatever you need.", speaking: speak);
       }
       return;
     }
@@ -1485,7 +1536,11 @@ class AppState extends ChangeNotifier {
     _push(ChatRole.user, transcript);
 
     try {
-      final turn = await voiceApi.query(sessionId: sessionId, userId: userId!, transcript: transcript);
+      final turn = await voiceApi.assistant(
+        sessionId: sessionId,
+        transcript: transcript,
+        authToken: userId,   // userId IS the auth_token — no JWT yet
+      );
       processing = false;
       notifyListeners();
 
@@ -1506,11 +1561,6 @@ class AppState extends ChangeNotifier {
 
       _push(ChatRole.ai, turn.replyText, speaking: speak);
 
-      // "change my pin"/"change my password" — same sensitive-value modal
-      // overlay onboarding uses (voice_screen.dart's _sensitiveSheetTypes),
-      // just submitted back through submitAccountPassword/
-      // submitAccountTransactionPin above instead of the onboarding
-      // equivalents, since this flow runs over /voice/query.
       if (turn.clientAction == 'open_password_modal') {
         sheet = SheetType.password_input;
         notifyListeners();
@@ -1546,9 +1596,6 @@ class AppState extends ChangeNotifier {
         }, const Duration(milliseconds: 700));
       }
 
-      // Diaspora direct-to-obligation payments — "pay school fees at
-      // Kings College" — same two-turn confirm shape as send_money, just
-      // to a verified institution instead of a saved contact.
       if (turn.intent == 'pay_institution' && turn.data?['status'] == 'awaiting_confirmation') {
         pendingPayment = PendingPaymentInfo(
           paymentId: turn.data!['payment_id'] as String,
@@ -1566,6 +1613,95 @@ class AppState extends ChangeNotifier {
       processing = false;
       error = e.detail;
       _push(ChatRole.ai, "Sorry, I couldn't reach the server: ${e.detail}");
+    }
+  }
+
+  // --- bank transfer (send_money_screen "To Bank Account") ----------------
+  BankTransferOut? lastTransfer;
+
+  Future<BankTransferOut?> initiateTransfer({
+    required int amountMinor,
+    required String bankCode,
+    required String accountNumber,
+    String narration = 'Transfer',
+  }) async {
+    if (userId == null) return null;
+    busy = true;
+    error = null;
+    notifyListeners();
+    try {
+      final result = await transfersApi.transfer(
+        userId: userId!,
+        amountMinor: amountMinor,
+        bankCode: bankCode,
+        accountNumber: accountNumber,
+        narration: narration,
+      );
+      lastTransfer = result;
+      await refreshBalance();
+      return result;
+    } on ApiException catch (e) {
+      error = e.detail;
+      return null;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  // --- receive money -------------------------------------------------------
+  Map<String, String>? receiveDetails; // {account_number, account_name, bank_name, qr_payload}
+
+  Future<void> loadReceiveDetails() async {
+    if (userId == null) return;
+    try {
+      final json = await _apiClient.get('/accounts/$userId/receive-details');
+      receiveDetails = {
+        'account_number': json['account_number'] as String,
+        'account_name': json['account_name'] as String,
+        'bank_name': json['bank_name'] as String,
+        'qr_payload': json['qr_payload'] as String,
+      };
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  // --- transaction receipt -------------------------------------------------
+  Map<String, dynamic>? selectedTransaction;
+
+  void openTransactionReceipt(Map<String, dynamic> tx) {
+    selectedTransaction = tx;
+    go(AppScreen.transactionReceipt);
+  }
+
+  // --- FX conversion -------------------------------------------------------
+  ConvertResponse? lastConversion;
+
+  Future<ConvertResponse?> convertCurrency({
+    required String toCurrency,
+    required int fromAmountMinor,
+  }) async {
+    if (userId == null) return null;
+    busy = true;
+    error = null;
+    notifyListeners();
+    try {
+      final result = await fxApi.convert(
+        userId: userId!,
+        fromCurrency: 'NGN',
+        toCurrency: toCurrency,
+        fromAmountMinor: fromAmountMinor,
+      );
+      lastConversion = result;
+      await refreshBalance();
+      await refreshWallets();
+      return result;
+    } on ApiException catch (e) {
+      error = e.detail;
+      return null;
+    } finally {
+      busy = false;
+      notifyListeners();
     }
   }
 

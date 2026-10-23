@@ -65,6 +65,15 @@ class ApiClient {
     return _decode(response);
   }
 
+  Future<Map<String, dynamic>> patch(String path, [Map<String, dynamic>? body]) async {
+    final response = await _http.patch(
+      _uri(path),
+      headers: const {'Content-Type': 'application/json'},
+      body: body != null ? jsonEncode(body) : null,
+    );
+    return _decode(response);
+  }
+
   /// multipart/form-data POST — currently only used to upload a recorded
   /// audio clip to POST /voice/transcribe (see TranscriptionApi).
   Future<Map<String, dynamic>> postMultipart(

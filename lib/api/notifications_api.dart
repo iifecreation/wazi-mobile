@@ -49,4 +49,17 @@ class NotificationsApi {
     final json = await _client.get('/notifications/$userId');
     return NotificationListResponse.fromJson(json);
   }
+
+  Future<void> markRead(String userId, String notificationId) async {
+    await _client.patch('/notifications/$userId/$notificationId/read');
+  }
+
+  Future<void> markAllRead(String userId) async {
+    await _client.patch('/notifications/$userId/read-all');
+  }
+
+  Future<int> unreadCount(String userId) async {
+    final json = await _client.get('/notifications/$userId/unread-count');
+    return json['count'] as int? ?? 0;
+  }
 }

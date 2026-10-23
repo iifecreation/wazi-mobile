@@ -49,6 +49,42 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  Future<void> _markAllRead() async {
+    final userId = widget.appState.userId;
+    if (userId == null) return;
+    try {
+      await widget.appState.notificationsApi.markAllRead(userId);
+      await _loadNotifs();
+    } catch (_) {}
+  }
+
+  Future<void> _onTapNotif(NotificationOut notif) async {
+    // Mark as read optimistically
+    final userId = widget.appState.userId;
+    if (userId != null && notif.unread) {
+      try {
+        await widget.appState.notificationsApi.markRead(userId, notif.id);
+        if (mounted) {
+          setState(() {
+            _notifications = _notifications.map((n) =>
+              n.id == notif.id
+                ? NotificationOut(id: n.id, title: n.title, body: n.body, time: n.time, type: n.type, unread: false)
+                : n
+            ).toList();
+          });
+        }
+      } catch (_) {}
+    }
+    widget.appState.openNotificationDetails({
+      'id': notif.id,
+      'title': notif.title,
+      'body': notif.body,
+      'time': notif.time,
+      'type': notif.type,
+      'unread': notif.unread,
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -68,6 +104,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
                 const SizedBox(width: 16),
                 Text('Notifications', style: WaziText.grotesk(size: 24, weight: FontWeight.w600, color: Colors.white)),
+                const Spacer(),
+                if (_notifications.any((n) => n.unread))
+                  GestureDetector(
+                    onTap: _markAllRead,
+                    child: Text(
+                      'Mark all read',
+                      style: WaziText.inter(size: 13, color: WaziColors.gold, weight: FontWeight.w500),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -88,17 +133,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         final notif = _notifications[index];
                         return _NotificationCard(
                           notif: notif,
-                          onTap: () {
-                             // openNotificationDetails expects a Map for now, or we update it. Let's pass a mock map for backwards compatibility.
-                             widget.appState.openNotificationDetails({
-                               'id': notif.id,
-                               'title': notif.title,
-                               'body': notif.body,
-                               'time': notif.time,
-                               'type': notif.type,
-                               'unread': notif.unread,
-                             });
-                          },
+                          onTap: () => _onTapNotif(notif),
                         );
                       },
                     ),

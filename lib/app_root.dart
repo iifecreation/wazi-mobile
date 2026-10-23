@@ -289,6 +289,10 @@ class _AppRootState extends State<AppRoot> {
       case SheetType.password_input:
       case SheetType.transaction_pin_input:
       case SheetType.name_input:
+      case SheetType.phone_input:
+      case SheetType.otp_input:
+      case SheetType.email_input:
+      case SheetType.free_text_input:
       case null:
         return null;
     }

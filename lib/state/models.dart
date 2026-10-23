@@ -29,6 +29,8 @@ enum AppScreen {
   hotels,
   appSettings,
   transactionHistory,
+  transactionReceipt,
+  receiveMoney,
   accountLimits,
   bankCards,
   bizPayment,
@@ -64,6 +66,10 @@ enum SheetType {
   password_input,
   transaction_pin_input,
   name_input,
+  phone_input,
+  otp_input,
+  email_input,
+  free_text_input,
   add_wallet,
 }
 

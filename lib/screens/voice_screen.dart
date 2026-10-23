@@ -196,6 +196,18 @@ class _VoiceScreenState extends State<VoiceScreen> {
                                   case SheetType.name_input:
                                     widget.appState.submitOnboardingName(text);
                                     break;
+                                  case SheetType.phone_input:
+                                    widget.appState.submitOnboardingPhone(text);
+                                    break;
+                                  case SheetType.otp_input:
+                                    widget.appState.submitOnboardingOtp(text);
+                                    break;
+                                  case SheetType.email_input:
+                                    widget.appState.submitOnboardingEmail(text);
+                                    break;
+                                  case SheetType.free_text_input:
+                                    widget.appState.submitOnboardingFreeText(text);
+                                    break;
                                   default:
                                     break;
                                 }
@@ -208,7 +220,10 @@ class _VoiceScreenState extends State<VoiceScreen> {
                                 padding: const EdgeInsets.symmetric(vertical: 18),
                                 elevation: 0,
                               ),
-                              child: Text('Submit Securely', style: WaziText.inter(size: 15, weight: FontWeight.w600)),
+                              child: Text(
+                                _sensitiveFieldSubmitLabel(widget.appState.sheet),
+                                style: WaziText.inter(size: 15, weight: FontWeight.w600),
+                              ),
                             ),
                           ),
                         ],
@@ -258,16 +273,21 @@ class _VoiceScreenState extends State<VoiceScreen> {
 }
 
 // Typed-input overlay — BVN/NIN/password/PIN are here because they're
-// sensitive (never spoken); name_input is here for the opposite reason —
-// nothing sensitive about a name, it's just that some names (especially
-// ones not in English) don't come through speech recognition reliably no
-// matter how many times they're repeated, so typing is the fallback.
+// sensitive (never spoken). Everything else here (name, phone, OTP code,
+// email, free text) is *not* sensitive — it's the universal "let me type
+// it instead" escape hatch: any spoken step can be swapped for a typed
+// one on request ("I want to type it"), same as names already could be
+// after a mis-hearing. See app/dialogue/onboarding.py's _TYPEABLE_STATES.
 const _sensitiveSheetTypes = {
   SheetType.bvn_input,
   SheetType.nin_input,
   SheetType.password_input,
   SheetType.transaction_pin_input,
   SheetType.name_input,
+  SheetType.phone_input,
+  SheetType.otp_input,
+  SheetType.email_input,
+  SheetType.free_text_input,
 };
 
 String _sensitiveFieldTitle(SheetType? sheet) {
@@ -286,6 +306,14 @@ String _sensitiveFieldTitle(SheetType? sheet) {
       return 'Enter your PIN';
     case SheetType.name_input:
       return 'Type your name';
+    case SheetType.phone_input:
+      return 'Type your phone number';
+    case SheetType.otp_input:
+      return 'Type the code';
+    case SheetType.email_input:
+      return 'Type your email';
+    case SheetType.free_text_input:
+      return 'Type your answer';
     default:
       return '';
   }
@@ -294,6 +322,9 @@ String _sensitiveFieldTitle(SheetType? sheet) {
 String _sensitiveFieldSubtitle(SheetType? sheet) {
   if (sheet == SheetType.name_input) {
     return "Some names don't come through clearly by voice — type it here instead.";
+  }
+  if (const {SheetType.phone_input, SheetType.otp_input, SheetType.email_input, SheetType.free_text_input}.contains(sheet)) {
+    return 'Type it here instead of saying it out loud.';
   }
   return 'For your privacy, please type it below rather than speaking it out loud.';
 }
@@ -310,13 +341,37 @@ String _sensitiveFieldHint(SheetType? sheet) {
       return '4-digit PIN';
     case SheetType.name_input:
       return 'Full name';
+    case SheetType.phone_input:
+      return 'Phone number';
+    case SheetType.otp_input:
+      return 'Verification code';
+    case SheetType.email_input:
+      return 'name@example.com';
+    case SheetType.free_text_input:
+      return 'Your answer';
     default:
       return '';
   }
 }
 
-bool _sensitiveFieldIsNumeric(SheetType? sheet) =>
-    sheet == SheetType.bvn_input || sheet == SheetType.nin_input || sheet == SheetType.transaction_pin_input;
+bool _sensitiveFieldIsNumeric(SheetType? sheet) => const {
+  SheetType.bvn_input,
+  SheetType.nin_input,
+  SheetType.transaction_pin_input,
+  SheetType.phone_input,
+  SheetType.otp_input,
+}.contains(sheet);
 
 bool _sensitiveFieldObscured(SheetType? sheet) =>
     sheet == SheetType.password_input || sheet == SheetType.transaction_pin_input;
+
+String _sensitiveFieldSubmitLabel(SheetType? sheet) {
+  const notActuallySensitive = {
+    SheetType.name_input,
+    SheetType.phone_input,
+    SheetType.otp_input,
+    SheetType.email_input,
+    SheetType.free_text_input,
+  };
+  return notActuallySensitive.contains(sheet) ? 'Submit' : 'Submit Securely';
+}
