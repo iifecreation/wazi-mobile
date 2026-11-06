@@ -12,7 +12,11 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import '../api/accounts_api.dart' as accounts_api;
 import '../api/api_client.dart';
+import '../api/fixed_deposits_api.dart';
 import '../api/fx_api.dart';
+import '../api/events_api.dart';
+import '../api/lifestyle_api.dart';
+import '../api/support_api.dart';
 import '../api/payments_api.dart';
 import '../api/registration_api.dart';
 import '../api/requests_api.dart';
@@ -72,10 +76,6 @@ class AppState extends ChangeNotifier {
   }
 
   final ApiClient _apiClient = ApiClient();
-
-  /// Exposed so screens can make direct API calls not yet wrapped in
-  /// a dedicated service (e.g. transaction receipt detail endpoint).
-  ApiClient get apiClient => _apiClient;
   late final RegistrationApi registrationApi = RegistrationApi(_apiClient);
   late final accounts_api.AccountsApi accountsApi = accounts_api.AccountsApi(_apiClient);
   late final VoiceApi voiceApi = VoiceApi(_apiClient);
@@ -92,7 +92,12 @@ class AppState extends ChangeNotifier {
   late final ContactsApi contactsApi = ContactsApi(_apiClient);
   late final InstitutionsApi institutionsApi = InstitutionsApi(_apiClient);
   late final TransfersApi transfersApi = TransfersApi(_apiClient);
+  late final BeneficiariesApi beneficiariesApi = BeneficiariesApi(_apiClient);
   late final FxApi fxApi = FxApi(_apiClient);
+  late final FixedDepositsApi fixedDepositsApi = FixedDepositsApi(_apiClient);
+  late final EventsApi eventsApi = EventsApi(_apiClient);
+  late final SupportApi supportApi = SupportApi(_apiClient);
+  late final LifestyleApi lifestyleApi = LifestyleApi(_apiClient);
   final FlutterTts _tts = FlutterTts();
   final AudioRecorder _recorder = AudioRecorder();
   // Flips true the first time the server reports no transcription
@@ -480,7 +485,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     
     try {
-      final response = await voiceApi.onboarding(sessionId: sessionId, transcript: transcript);
+      final response = await voiceApi.onboarding(
+        sessionId: sessionId,
+        transcript: transcript,
+        language: lang,
+      );
       processing = false;
 
       // The channel's only way to learn its user_id — set as soon as the
@@ -880,6 +889,7 @@ class AppState extends ChangeNotifier {
       await _persistUserId(userId!);
       await refreshBalance();
       await refreshWallets();
+      await refreshUnreadNotifCount();
       go(AppScreen.dashboard);
       return true;
     } on ApiException catch (e) {
@@ -1333,6 +1343,7 @@ class AppState extends ChangeNotifier {
         sessionId: sessionId,
         transcript: transcript,
         authToken: userId,
+        language: lang,
       );
       if (turn.data?['status'] == 'awaiting_confirmation') {
         final nameKey = expectedKind == PaymentKind.contact ? 'contact_name' : 'institution_name';
@@ -1342,20 +1353,6 @@ class AppState extends ChangeNotifier {
           recipientName: turn.data![nameKey] as String,
           amountFormatted: turn.data!['amount_formatted'] as String,
           replyText: turn.replyText,
-        );
-        sheet = SheetType.confirm;
-        return true;
-      }
-      error = turn.replyText;
-      return false;
-    } on ApiException catch (e) {
-      error = e.detail;
-      return false;
-    } finally {
-      busy = false;
-      notifyListeners();
-    }
-  }
         );
         sheet = SheetType.confirm;
         return true;
@@ -1417,10 +1414,14 @@ class AppState extends ChangeNotifier {
           sheet = null;
         }
       } else {
-        // Contact and institution payments are both confirmed by voice —
+        // Contact and institution payments are confirmed by voice —
         // the dialogue manager routes on the session's pending payment
         // type, not anything the client needs to distinguish here.
-        final turn = await voiceApi.query(sessionId: sessionId, userId: userId!, transcript: 'Confirm');
+        final turn = await voiceApi.assistant(
+          sessionId: sessionId,
+          transcript: 'Confirm',
+          authToken: userId,
+        );
         _push(ChatRole.ai, turn.replyText, speaking: speak);
         sheet = null;
         if (turn.data?['status'] == 'awaiting_pin') {
@@ -1616,7 +1617,16 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  // --- bank transfer (send_money_screen "To Bank Account") ----------------
+  // --- notifications unread count -----------------------------------------
+  int unreadNotifCount = 0;
+
+  Future<void> refreshUnreadNotifCount() async {
+    if (userId == null) return;
+    try {
+      unreadNotifCount = await notificationsApi.unreadCount(userId!);
+      notifyListeners();
+    } catch (_) {}
+  }
   BankTransferOut? lastTransfer;
 
   Future<BankTransferOut?> initiateTransfer({

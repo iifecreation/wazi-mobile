@@ -170,18 +170,29 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       itemCount: txs.length,
       itemBuilder: (context, index) {
         final tx = txs[index];
-        final isCredit = tx.direction == 'in';
+        final isCredit = tx.direction == 'credit';
         IconData icon = isCredit ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
-        if (tx.category == 'airtime') icon = Icons.phone_android_rounded;
-        if (tx.category == 'electricity') icon = Icons.lightbulb_outline_rounded;
-        
-        return _TransactionTile(
+        if (tx.category == 'airtime_data') icon = Icons.phone_android_rounded;
+        if (tx.category == 'utilities') icon = Icons.lightbulb_outline_rounded;
+
+        return GestureDetector(
+          onTap: () => widget.appState.openTransactionReceipt({
+            'id': tx.id,
+            'direction': tx.direction,
+            'amount_formatted': tx.amountFormatted,
+            'counterparty': tx.counterparty,
+            'description': tx.description,
+            'category': tx.category,
+            'occurred_at': tx.occurredAt.toIso8601String(),
+          }),
+          child: _TransactionTile(
           title: tx.counterparty.isEmpty ? tx.description : tx.counterparty,
           subtitle: '${tx.occurredAt.month}/${tx.occurredAt.day} • ${tx.category}',
           amount: '${isCredit ? '+' : '-'}${tx.amountFormatted}',
           isCredit: isCredit,
-          status: 'Success', // Mocked as the API doesn't return status yet
+          status: 'Success',
           icon: icon,
+          ),
         );
       },
     );

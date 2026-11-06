@@ -43,6 +43,7 @@ class ServicesScreen extends StatelessWidget {
                     title: 'Transfers & Payments',
                     services: [
                       _ServiceItem(icon: Icons.arrow_upward_rounded, label: 'Send Money', onTap: () => appState.go(AppScreen.sendMoney)),
+                      _ServiceItem(icon: Icons.arrow_downward_rounded, label: 'Receive Money', iconColor: WaziColors.teal, onTap: () => appState.go(AppScreen.receiveMoney)),
                       _ServiceItem(icon: Icons.attach_money_rounded, label: 'International', onTap: () => appState.go(AppScreen.international)),
                       _ServiceItem(icon: Icons.qr_code_scanner_rounded, label: 'Scan to Pay', iconColor: WaziColors.teal, onTap: () => appState.go(AppScreen.scan)),
                       _ServiceItem(icon: Icons.arrow_downward_rounded, label: 'Request Money', onTap: () => appState.go(AppScreen.requestMoney)),

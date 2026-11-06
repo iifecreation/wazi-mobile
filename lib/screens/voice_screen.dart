@@ -7,6 +7,14 @@ import '../theme/text_styles.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/mic_button.dart';
 
+const _supportedLangs = [
+  ('English', '🇬🇧'),
+  ('Pidgin', '🇳🇬'),
+  ('Yoruba', '🇳🇬'),
+  ('Igbo', '🇳🇬'),
+  ('Hausa', '🇳🇬'),
+];
+
 class VoiceScreen extends StatefulWidget {
   const VoiceScreen({super.key, required this.appState});
 
@@ -241,6 +249,46 @@ class _VoiceScreenState extends State<VoiceScreen> {
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // ── Language picker row ─────────────────────────────────────────
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: _supportedLangs.map((entry) {
+                final (name, flag) = entry;
+                final selected = widget.appState.lang == name;
+                return GestureDetector(
+                  onTap: () => widget.appState.pickLang(name),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? WaziColors.gold.withValues(alpha: 0.2)
+                          : Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: selected
+                            ? WaziColors.gold.withValues(alpha: 0.7)
+                            : Colors.white.withValues(alpha: 0.1),
+                      ),
+                    ),
+                    child: Text(
+                      '$flag $name',
+                      style: WaziText.inter(
+                        size: 12,
+                        weight: selected ? FontWeight.w700 : FontWeight.w400,
+                        color: selected ? WaziColors.gold : WaziColors.textAt(0.55),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
           if (widget.appState.error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
@@ -253,17 +301,17 @@ class _VoiceScreenState extends State<VoiceScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            widget.appState.processing 
-                ? 'PROCESSING...' 
-                : widget.appState.isSpeaking 
-                    ? 'SPEAKING...' 
-                    : widget.appState.listening 
+            widget.appState.processing
+                ? 'PROCESSING...'
+                : widget.appState.isSpeaking
+                    ? 'SPEAKING...'
+                    : widget.appState.listening
                         ? 'LISTENING...'
                         : 'TAP TO SPEAK',
             style: WaziText.inter(
-              size: 12.5, 
-              letterSpacing: 2.0, 
-              color: widget.appState.listening ? WaziColors.teal : WaziColors.textAt(.45)
+              size: 12.5,
+              letterSpacing: 2.0,
+              color: widget.appState.listening ? WaziColors.teal : WaziColors.textAt(.45),
             ),
           ),
         ],

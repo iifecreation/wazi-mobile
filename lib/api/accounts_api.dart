@@ -128,4 +128,9 @@ class AccountsApi {
     );
     return TransactionHistoryResponse.fromJson(json);
   }
+
+  /// Fetch full receipt detail for a single transaction.
+  Future<Map<String, dynamic>> getTransactionReceipt(String userId, String transactionId) async {
+    return _client.get('/accounts/$userId/transactions/$transactionId');
+  }
 }

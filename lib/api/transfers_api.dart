@@ -119,3 +119,53 @@ class TransfersApi {
         .toList();
   }
 }
+
+/// Mirrors app/beneficiaries/schemas.py::BeneficiaryOut.
+class BeneficiaryOut {
+  BeneficiaryOut({
+    required this.beneficiaryId,
+    required this.accountNumber,
+    required this.bankCode,
+    required this.bankName,
+    required this.beneficiaryName,
+  });
+
+  final String beneficiaryId;
+  final String accountNumber;
+  final String bankCode;
+  final String bankName;
+  final String beneficiaryName;
+
+  factory BeneficiaryOut.fromJson(Map<String, dynamic> json) => BeneficiaryOut(
+    beneficiaryId: json['beneficiary_id'] as String,
+    accountNumber: json['account_number'] as String,
+    bankCode: json['bank_code'] as String,
+    bankName: json['bank_name'] as String,
+    beneficiaryName: json['beneficiary_name'] as String,
+  );
+}
+
+class BeneficiariesApi {
+  BeneficiariesApi(this._client);
+  final ApiClient _client;
+
+  Future<List<BeneficiaryOut>> list(String userId) async {
+    final json = await _client.get('/beneficiaries/$userId');
+    return (json['beneficiaries'] as List)
+        .map((e) => BeneficiaryOut.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<BeneficiaryOut> add(String userId, String accountNumber, String bankCode, {String beneficiaryName = ''}) async {
+    final json = await _client.post('/beneficiaries/$userId', {
+      'account_number': accountNumber,
+      'bank_code': bankCode,
+      'beneficiary_name': beneficiaryName,
+    });
+    return BeneficiaryOut.fromJson(json);
+  }
+
+  Future<void> remove(String userId, String beneficiaryId) async {
+    await _client.delete('/beneficiaries/$userId/$beneficiaryId');
+  }
+}

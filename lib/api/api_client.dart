@@ -26,7 +26,7 @@ class ApiException implements Exception {
 /// non-default port.
 class ApiClient {
   ApiClient({String? baseUrl})
-    : baseUrl = baseUrl ?? const String.fromEnvironment('WAZI_API_BASE_URL', defaultValue: 'http://127.0.0.1:8001');
+    : baseUrl = baseUrl ?? const String.fromEnvironment('WAZI_API_BASE_URL', defaultValue: 'http://127.0.0.1:8000');
 
   final String baseUrl;
   final http.Client _http = http.Client();
@@ -72,6 +72,12 @@ class ApiClient {
       body: body != null ? jsonEncode(body) : null,
     );
     return _decode(response);
+  }
+
+  Future<void> delete(String path) async {
+    final response = await _http.delete(_uri(path), headers: const {'Content-Type': 'application/json'});
+    if (response.statusCode >= 200 && response.statusCode < 300) return;
+    _decode(response); // throws if non-2xx
   }
 
   /// multipart/form-data POST — currently only used to upload a recorded

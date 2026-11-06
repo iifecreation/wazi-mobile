@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../api/api_client.dart';
 import '../state/app_state.dart';
 import '../state/models.dart';
 import '../theme/colors.dart';
@@ -43,14 +42,12 @@ class _TransactionReceiptScreenState extends State<TransactionReceiptScreen> {
       return;
     }
     try {
-      final data = await widget.appState.apiClient.get(
-        '/accounts/$userId/transactions/${tx['id']}',
-      );
+      final data = await widget.appState.accountsApi.getTransactionReceipt(userId, tx['id'] as String);
       if (!mounted) return;
       setState(() { _receipt = data; _loading = false; });
-    } on ApiException catch (e) {
+    } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.detail; _loading = false; });
+      setState(() { _error = e.toString(); _loading = false; });
     } catch (_) {
       if (!mounted) return;
       setState(() { _error = 'Could not load receipt.'; _loading = false; });

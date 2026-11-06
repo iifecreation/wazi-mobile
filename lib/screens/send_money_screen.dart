@@ -6,7 +6,6 @@ import '../state/models.dart';
 import '../theme/colors.dart';
 import '../theme/text_styles.dart';
 import '../widgets/payment_picker_form.dart';
-
 class SendMoneyScreen extends StatefulWidget {
   const SendMoneyScreen({super.key, required this.appState});
   final AppState appState;
@@ -157,10 +156,15 @@ class _BankTransferFormState extends State<_BankTransferForm> {
   bool _submitting = false;
   String? _error;
 
+  // Saved beneficiaries for quick-pick
+  List<BeneficiaryOut> _beneficiaries = [];
+  bool _loadingBeneficiaries = true;
+
   @override
   void initState() {
     super.initState();
     _loadBanks();
+    _loadBeneficiaries();
   }
 
   @override
@@ -177,6 +181,30 @@ class _BankTransferFormState extends State<_BankTransferForm> {
       if (!mounted) return;
       setState(() => _banks = banks);
     } catch (_) {}
+  }
+
+  Future<void> _loadBeneficiaries() async {
+    final userId = widget.appState.userId;
+    if (userId == null) { setState(() => _loadingBeneficiaries = false); return; }
+    try {
+      final list = await widget.appState.beneficiariesApi.list(userId);
+      if (!mounted) return;
+      setState(() { _beneficiaries = list; _loadingBeneficiaries = false; });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingBeneficiaries = false);
+    }
+  }
+
+  void _selectBeneficiary(BeneficiaryOut b) {
+    // Pre-fill account number, bank, and beneficiary name from the saved record.
+    final bank = _banks.firstWhere((bk) => bk.code == b.bankCode, orElse: () => BankInfo(code: b.bankCode, name: b.bankName));
+    setState(() {
+      _selectedBank = bank;
+      _accountController.text = b.accountNumber;
+      _beneficiaryName = b.beneficiaryName;
+      _error = null;
+    });
   }
 
   Future<void> _lookupName() async {
@@ -219,6 +247,8 @@ class _BankTransferFormState extends State<_BankTransferForm> {
       _amountController.clear();
       _narrationController.clear();
       setState(() { _selectedBank = null; _beneficiaryName = null; });
+      // Refresh beneficiaries — the transfer auto-saved this recipient.
+      _loadBeneficiaries();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Transfer of ${result.amountFormatted} to ${result.beneficiaryName} was successful!'),
@@ -235,7 +265,64 @@ class _BankTransferFormState extends State<_BankTransferForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Bank picker
+        // ── Saved beneficiaries quick-pick ─────────────────────────────
+        if (_loadingBeneficiaries)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 20),
+            child: SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else if (_beneficiaries.isNotEmpty) ...[
+          Text('Recent Recipients', style: WaziText.inter(size: 14, color: WaziColors.textAt(0.7))),
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _beneficiaries.take(6).map((b) {
+                final isSelected = _accountController.text == b.accountNumber &&
+                    _selectedBank?.code == b.bankCode;
+                return GestureDetector(
+                  onTap: () => _selectBeneficiary(b),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? WaziColors.gold.withValues(alpha: 0.15)
+                          : Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? WaziColors.gold.withValues(alpha: 0.5)
+                            : Colors.white.withValues(alpha: 0.1),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          b.beneficiaryName,
+                          style: WaziText.inter(
+                            size: 13,
+                            weight: FontWeight.w600,
+                            color: isSelected ? WaziColors.gold : Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          b.bankName,
+                          style: WaziText.inter(size: 11, color: WaziColors.textAt(0.45)),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
+
+        // ── Bank picker ────────────────────────────────────────────────
         Text('Bank', style: WaziText.inter(size: 14, color: WaziColors.textAt(0.7))),
         const SizedBox(height: 8),
         GestureDetector(
@@ -263,7 +350,7 @@ class _BankTransferFormState extends State<_BankTransferForm> {
         ),
         const SizedBox(height: 20),
 
-        // Account number
+        // ── Account number ────────────────────────────────────────────
         Text('Account Number', style: WaziText.inter(size: 14, color: WaziColors.textAt(0.7))),
         const SizedBox(height: 8),
         _InputBox(
@@ -273,10 +360,11 @@ class _BankTransferFormState extends State<_BankTransferForm> {
           maxLength: 10,
           onChanged: (v) {
             if (v.length == 10 && _selectedBank != null) _lookupName();
+            // Clear beneficiary name if user edits manually
+            if (_beneficiaryName != null) setState(() => _beneficiaryName = null);
           },
         ),
 
-        // Beneficiary name lookup result
         if (_lookingUp)
           const Padding(
             padding: EdgeInsets.only(top: 8),
@@ -299,7 +387,7 @@ class _BankTransferFormState extends State<_BankTransferForm> {
           ),
         const SizedBox(height: 20),
 
-        // Amount
+        // ── Amount ────────────────────────────────────────────────────
         Text('Amount (₦)', style: WaziText.inter(size: 14, color: WaziColors.textAt(0.7))),
         const SizedBox(height: 8),
         _InputBox(controller: _amountController, hint: '0', keyboardType: TextInputType.number, large: true),
@@ -307,7 +395,7 @@ class _BankTransferFormState extends State<_BankTransferForm> {
         Text('₦50 transfer fee applies', style: WaziText.inter(size: 12, color: WaziColors.textAt(0.4))),
         const SizedBox(height: 20),
 
-        // Narration
+        // ── Narration ─────────────────────────────────────────────────
         Text('Narration (optional)', style: WaziText.inter(size: 14, color: WaziColors.textAt(0.7))),
         const SizedBox(height: 8),
         _InputBox(controller: _narrationController, hint: 'What is this for?'),

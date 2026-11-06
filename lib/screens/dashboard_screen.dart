@@ -31,6 +31,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     _loadTxs();
     widget.appState.refreshWallets();
+    widget.appState.refreshUnreadNotifCount();
   }
 
   Future<void> _loadTxs() async {
@@ -153,8 +154,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           const SizedBox(width: 8),
                           _HeaderIcon(
                             icon: Icons.notifications_none_rounded,
-                            onTap: widget.appState.openNotif,
-                            hasBadge: true,
+                            onTap: () async {
+                              widget.appState.openNotif();
+                              // Reset badge after opening
+                              await Future.delayed(const Duration(milliseconds: 300));
+                              widget.appState.refreshUnreadNotifCount();
+                            },
+                            badgeCount: widget.appState.unreadNotifCount,
                           ),
                           const SizedBox(width: 8),
                           _HeaderIcon(
@@ -214,6 +220,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         icon: Icons.arrow_upward_rounded,
                         label: 'Send money',
                         onTap: () => widget.appState.go(AppScreen.sendMoney),
+                      ),
+                      _QuickAction(
+                        icon: Icons.arrow_downward_rounded,
+                        label: 'Receive',
+                        iconColor: WaziColors.teal,
+                        onTap: () => widget.appState.go(AppScreen.receiveMoney),
                       ),
                       _QuickAction(
                         icon: Icons.attach_money_rounded,
@@ -293,20 +305,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               )
                             : Column(
                                 children: _recentTxs.map((tx) {
-                                  final isCredit = tx.direction == 'in';
+                                  final isCredit = tx.direction == 'credit';
                                   IconData icon = isCredit ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
-                                  if (tx.category == 'airtime') icon = Icons.phone_android_rounded;
-                                  if (tx.category == 'electricity') icon = Icons.lightbulb_outline_rounded;
-                                  
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 16),
-                                    child: _TransactionTile(
-                                      title: tx.counterparty.isEmpty ? tx.description : tx.counterparty,
-                                      subtitle: '${tx.occurredAt.month}/${tx.occurredAt.day} • ${tx.category}',
-                                      amount: '${isCredit ? '+' : '-'}${tx.amountFormatted}',
-                                      isCredit: isCredit,
-                                      status: 'Success', // Mocked as API doesn't return status yet
-                                      icon: icon,
+                                  if (tx.category == 'airtime_data') icon = Icons.phone_android_rounded;
+                                  if (tx.category == 'utilities') icon = Icons.lightbulb_outline_rounded;
+
+                                  return GestureDetector(
+                                    onTap: () => widget.appState.openTransactionReceipt({
+                                      'id': tx.id,
+                                      'direction': tx.direction,
+                                      'amount_formatted': tx.amountFormatted,
+                                      'counterparty': tx.counterparty,
+                                      'description': tx.description,
+                                      'category': tx.category,
+                                      'occurred_at': tx.occurredAt.toIso8601String(),
+                                    }),
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(bottom: 16),
+                                      child: _TransactionTile(
+                                        title: tx.counterparty.isEmpty ? tx.description : tx.counterparty,
+                                        subtitle: '${tx.occurredAt.month}/${tx.occurredAt.day} • ${tx.category}',
+                                        amount: '${isCredit ? '+' : '-'}${tx.amountFormatted}',
+                                        isCredit: isCredit,
+                                        status: 'Success',
+                                        icon: icon,
+                                      ),
                                     ),
                                   );
                                 }).toList(),
@@ -500,14 +523,14 @@ class _HeaderIcon extends StatelessWidget {
   const _HeaderIcon({
     required this.icon,
     required this.onTap,
-    this.hasBadge = false,
+    this.badgeCount = 0,
     this.color = Colors.white70,
     this.bgColor,
   });
 
   final IconData icon;
   final VoidCallback onTap;
-  final bool hasBadge;
+  final int badgeCount;
   final Color color;
   final Color? bgColor;
 
@@ -528,17 +551,27 @@ class _HeaderIcon extends StatelessWidget {
             ),
             child: Icon(icon, size: 20, color: color),
           ),
-          if (hasBadge)
+          if (badgeCount > 0)
             Positioned(
-              top: 0,
-              right: 0,
+              top: -2,
+              right: -2,
               child: Container(
-                width: 10,
-                height: 10,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
                   color: WaziColors.gold,
-                  border: Border.all(color: WaziColors.bg, width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: WaziColors.bg, width: 1.5),
+                ),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 14),
+                child: Text(
+                  badgeCount > 99 ? '99+' : '$badgeCount',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ),

@@ -10,6 +10,7 @@ import 'screens/cable_tv_screen.dart';
 import 'screens/cards_screen.dart';
 import 'screens/clipboard_settings_screen.dart';
 import 'screens/close_account_screen.dart';
+import 'screens/customer_service_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/device_management_screen.dart';
 import 'screens/electricity_screen.dart';
@@ -32,7 +33,8 @@ import 'screens/ojunior_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/pay_bills_screen.dart';
 import 'screens/payment_settings_screen.dart';
-import 'screens/placeholder_screen.dart';
+import 'screens/ussd_screen.dart';
+import 'screens/invitation_screen.dart';
 import 'screens/request_money_screen.dart';
 import 'screens/savings_screen.dart';
 import 'screens/savings_settings_screen.dart';
@@ -47,6 +49,8 @@ import 'screens/app_settings_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/themes_settings_screen.dart';
 import 'screens/transaction_history_screen.dart';
+import 'screens/transaction_receipt_screen.dart';
+import 'screens/receive_money_screen.dart';
 import 'screens/voice_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'state/app_state.dart';
@@ -127,9 +131,12 @@ class _AppRootState extends State<AppRoot> {
       case AppScreen.eventTickets:
       case AppScreen.flights:
       case AppScreen.hotels:
+      case AppScreen.receiveMoney:
         _appState.go(AppScreen.services);
       case AppScreen.notificationDetails:
         _appState.go(AppScreen.notifications);
+      case AppScreen.transactionReceipt:
+        _appState.go(AppScreen.transactionHistory);
       case AppScreen.appSettings:
       case AppScreen.transactionHistory:
       case AppScreen.accountLimits:
@@ -196,6 +203,8 @@ class _AppRootState extends State<AppRoot> {
         return FinanceScreen(key: const ValueKey('finance'), appState: _appState);
       case AppScreen.sendMoney:
         return SendMoneyScreen(key: const ValueKey('sendMoney'), appState: _appState);
+      case AppScreen.receiveMoney:
+        return ReceiveMoneyScreen(key: const ValueKey('receiveMoney'), appState: _appState);
       case AppScreen.international:
         return InternationalScreen(key: const ValueKey('international'), appState: _appState);
       case AppScreen.requestMoney:
@@ -222,6 +231,8 @@ class _AppRootState extends State<AppRoot> {
         return AppSettingsScreen(key: const ValueKey('appSettings'), appState: _appState);
       case AppScreen.transactionHistory:
         return TransactionHistoryScreen(key: const ValueKey('transactionHistory'), appState: _appState);
+      case AppScreen.transactionReceipt:
+        return TransactionReceiptScreen(key: const ValueKey('transactionReceipt'), appState: _appState);
       case AppScreen.accountLimits:
         return AccountLimitsScreen(key: const ValueKey('accountLimits'), appState: _appState);
       case AppScreen.bankCards:
@@ -231,11 +242,11 @@ class _AppRootState extends State<AppRoot> {
       case AppScreen.oJunior:
         return OJuniorScreen(key: const ValueKey('oJunior'), appState: _appState);
       case AppScreen.customerService:
-        return PlaceholderScreen(key: const ValueKey('customerService'), appState: _appState, title: 'Customer Service', backScreen: AppScreen.settings);
+        return CustomerServiceScreen(key: const ValueKey('customerService'), appState: _appState);
       case AppScreen.invitation:
-        return PlaceholderScreen(key: const ValueKey('invitation'), appState: _appState, title: 'Invitation', backScreen: AppScreen.settings);
+        return InvitationScreen(key: const ValueKey('invitation'), appState: _appState);
       case AppScreen.ussd:
-        return PlaceholderScreen(key: const ValueKey('ussd'), appState: _appState, title: 'Wazi USSD', backScreen: AppScreen.settings);
+        return UssdScreen(key: const ValueKey('ussd'), appState: _appState);
       case AppScreen.rateUs:
       case AppScreen.aboutSettings:
         return AboutSettingsScreen(key: const ValueKey('aboutSettings'), appState: _appState);

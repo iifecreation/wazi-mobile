@@ -61,30 +61,31 @@ class VoiceApi {
     required String transcript,
     String? authToken,
     String? voiceSampleId,
+    String language = 'English',
   }) async {
     final json = await _client.post('/voice/assistant', {
       'session_id': sessionId,
       'transcript': transcript,
       if (authToken != null) 'auth_token': authToken,
       if (voiceSampleId != null) 'voice_sample_id': voiceSampleId,
+      'language': language,
     });
     return DialogueTurnResponse.fromJson(json);
   }
 
-  /// Legacy /voice/query endpoint — kept for backwards compatibility with
-  /// existing payment confirm flows that are already mid-session. New code
-  /// should use [assistant] instead.
   Future<DialogueTurnResponse> query({
     required String sessionId,
     required String userId,
     required String transcript,
     String? voiceSampleId,
+    String language = 'English',
   }) async {
     final json = await _client.post('/voice/query', {
       'session_id': sessionId,
       'user_id': userId,
       'transcript': transcript,
       if (voiceSampleId != null) 'voice_sample_id': voiceSampleId,
+      'language': language,
     });
     return DialogueTurnResponse.fromJson(json);
   }
@@ -92,10 +93,12 @@ class VoiceApi {
   Future<VoiceOnboardingResponse> onboarding({
     required String sessionId,
     required String transcript,
+    String language = 'English',
   }) async {
     final json = await _client.post('/voice/onboarding', {
       'session_id': sessionId,
       'transcript': transcript,
+      'language': language,
     });
     return VoiceOnboardingResponse.fromJson(json);
   }

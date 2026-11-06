@@ -55,6 +55,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     try {
       await widget.appState.notificationsApi.markAllRead(userId);
       await _loadNotifs();
+      widget.appState.refreshUnreadNotifCount();
     } catch (_) {}
   }
 
